@@ -12,6 +12,10 @@ import { review } from "../lib/commands/review.js";
 import { install } from "../lib/commands/install.js";
 import { upgrade } from "../lib/commands/upgrade.js";
 import { init } from "../lib/commands/init.js";
+import { doctor } from "../lib/commands/doctor.js";
+import { AGENT_PRIORITY } from "../lib/agents.js";
+
+const AGENT_OPT_DESC = `força o agente a usar (${AGENT_PRIORITY.join(", ")}) em vez de autodetectar`;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
@@ -70,10 +74,12 @@ program
   .command("task <descricao>")
   .description(
     "Implementa uma task simples de ponta a ponta: monta o prompt (skill + contexto comprimido) e " +
-      "executa `caveman` de verdade, validando com `npm test` quando existir. Sem `caveman` no PATH, " +
-      "cai de volta para apenas imprimir o prompt.",
+      "executa um agente de IA de verdade (`caveman` ou `claude`, o que estiver no PATH), validando " +
+      "com `npm test` quando existir. Sem nenhum dos dois, cai de volta para apenas imprimir o prompt.",
   )
   .option("--skill <nome_do_arquivo>", "arquivo .md da skill a usar (em skills/custom/ ou skills/external/)")
+  .option("--agent <bin>", AGENT_OPT_DESC)
+  .option("--yolo", "auto-aprova TUDO no agente, inclusive execução de shell arbitrário")
   .action(async (descricao, options) => {
     try {
       await task(ROOT, process.cwd(), descricao, options);
@@ -103,11 +109,12 @@ program
   .command("review")
   .description(
     "Revisa as mudanças pendentes (staged + unstaged) do repositório atual com a skill code-review.md. " +
-      "Executa `caveman` de verdade quando disponível; senão, imprime o prompt.",
+      "Executa `caveman` ou `claude` de verdade (o que estiver no PATH); senão, imprime o prompt.",
   )
-  .action(async () => {
+  .option("--agent <bin>", AGENT_OPT_DESC)
+  .action(async (options) => {
     try {
-      await review(ROOT, process.cwd());
+      await review(ROOT, process.cwd(), options);
     } catch (err) {
       console.log(chalk.red(`Erro: ${err.message}`));
       process.exitCode = 1;
@@ -116,10 +123,27 @@ program
 
 program
   .command("install")
-  .description("Instala as dependências da Melinna (npm install) e clona caveman-code/spec-kit em tools/.")
+  .description(
+    "Prepara o ambiente: instala dependências (em clone de dev) e clona caveman-code/spec-kit no " +
+      "diretório de ferramentas (~/.melinna/tools numa instalação global).",
+  )
+  .option("--full", "clone completo dos repositórios de terceiros (o padrão é --depth 1)")
+  .action(async (options) => {
+    try {
+      await install(ROOT, options);
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("doctor")
+  .description("Checa o ambiente: git, specify, clones de terceiros e quais agentes de IA estão disponíveis.")
   .action(async () => {
     try {
-      await install(ROOT);
+      const ok = await doctor(ROOT);
+      if (!ok) process.exitCode = 1;
     } catch (err) {
       console.log(chalk.red(`Erro: ${err.message}`));
       process.exitCode = 1;
@@ -140,7 +164,7 @@ program
 
 program
   .command("init")
-  .description("Linka o comando `melinna` globalmente (npm link) e checa as dependências opcionais (caveman, specify).")
+  .description("Linka o comando `melinna` globalmente (npm link, só em clone de dev) e roda o `doctor`.")
   .action(async () => {
     try {
       await init(ROOT);
