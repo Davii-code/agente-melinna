@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { detectStacks } from "../lib/detect.js";
+import { detectStacks, summarizeStacks } from "../lib/detect.js";
 import { REGISTRY, alwaysOnEntries, entriesForTags, findEntry } from "../lib/registry.js";
 
 /** Cria um projeto falso com os arquivos dados e devolve seu caminho. */
@@ -99,6 +99,81 @@ test("projeto vazio não detecta stack nenhuma", (t) => {
 
 test("package.json inválido não derruba a detecção", (t) => {
   assert.doesNotThrow(() => tagsOf({ "package.json": "{ isso não é json" }, t));
+});
+
+const SPRING_POM =
+  "<project><dependency><groupId>org.springframework.boot</groupId></dependency></project>";
+
+test("monorepo: detecta as stacks dos módulos a partir da raiz", (t) => {
+  // Regressão: num monolito com backend/ e frontend/ nenhum marcador fica na
+  // raiz, e rodar `melinna task` ali não detectava stack nenhuma.
+  const tags = tagsOf(
+    {
+      "README.md": "# Monolito",
+      "backend/pom.xml": SPRING_POM,
+      "frontend/package.json": JSON.stringify({ dependencies: { react: "^19", next: "^15" } }),
+    },
+    t,
+  );
+  for (const expected of ["java", "spring", "node", "react", "nextjs"]) {
+    assert.ok(tags.includes(expected), `esperava ${expected} em ${tags}`);
+  }
+});
+
+test("monorepo: detecta módulos dentro de pastas-contêiner (apps/, packages/)", (t) => {
+  const tags = tagsOf(
+    {
+      "apps/api/pom.xml": SPRING_POM,
+      "packages/ui/package.json": JSON.stringify({ dependencies: { vue: "^3" } }),
+    },
+    t,
+  );
+  assert.ok(tags.includes("java"));
+  assert.ok(tags.includes("vue"));
+});
+
+test("monorepo: evidência diz de qual módulo veio cada stack", (t) => {
+  const dir = fixture({ "backend/pom.xml": SPRING_POM });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const { evidence, modules } = detectStacks(dir);
+  const java = evidence.find((e) => e.tag === "java");
+  assert.equal(java.where, "backend");
+  assert.ok(modules.some((m) => m.path === "backend"));
+});
+
+test("marcador na raiz é atribuído à raiz, não a um módulo", (t) => {
+  const dir = fixture({ "pom.xml": SPRING_POM });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const { evidence, modules } = detectStacks(dir);
+  assert.equal(evidence.find((e) => e.tag === "java").where, ".");
+  assert.equal(modules.length, 0, "projeto de stack única não deveria listar módulos");
+});
+
+test("node_modules não é varrido em busca de stacks", (t) => {
+  // Sem o filtro, qualquer dependência com pom.xml faria o projeto virar Java.
+  const tags = tagsOf(
+    {
+      "package.json": JSON.stringify({ dependencies: {} }),
+      "node_modules/alguma-lib/pom.xml": SPRING_POM,
+    },
+    t,
+  );
+  assert.ok(tags.includes("node"));
+  assert.ok(!tags.includes("java"), `node_modules não deveria contar: ${tags}`);
+});
+
+test("summarizeStacks agrupa as tags por módulo", (t) => {
+  const dir = fixture({
+    "backend/pom.xml": SPRING_POM,
+    "frontend/package.json": JSON.stringify({ dependencies: { react: "^19" } }),
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const resumo = summarizeStacks(detectStacks(dir).evidence);
+  assert.match(resumo, /backend\//);
+  assert.match(resumo, /frontend\//);
 });
 
 test("registry: toda entrada tem os campos exigidos e nome único", () => {

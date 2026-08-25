@@ -24,6 +24,7 @@ Você não escolheu skill, não escolheu agente, não montou prompt.
 - [Os quatro comandos parecidos](#os-quatro-comandos-parecidos)
 - [Todos os comandos](#todos-os-comandos)
 - [Como a Melinna escolhe as skills](#como-a-melinna-escolhe-as-skills)
+  - [Monorepos](#monorepos-rode-na-raiz-uma-vez-só)
 - [Instalando skills](#instalando-skills)
 - [Escrevendo suas próprias skills](#escrevendo-suas-próprias-skills)
 - [Memória do projeto](#memória-do-projeto)
@@ -69,6 +70,8 @@ melinna skills install
 ```
 
 Detecta a stack do diretório e baixa as skills daquela tecnologia, mais as de arquitetura e revisão (que valem para qualquer linguagem). **Rode uma vez por stack** — as skills ficam em `~/.melinna/skills` e servem todos os seus projetos daquela tecnologia.
+
+Num monorepo, rode na raiz: ele detecta os módulos e baixa as skills de todas as stacks de uma vez. Veja [Monorepos](#monorepos-rode-na-raiz-uma-vez-só).
 
 ### 5. Confira
 
@@ -172,7 +175,43 @@ Esta é a ideia central: **você não escolhe a skill**.
 | `advpl`, `protheus` | fontes `.prw`, `.tlpp`, `.ch`, `.prx` |
 | `python`, `go`, `rust` | `pyproject.toml`/`requirements.txt`, `go.mod`, `Cargo.toml` |
 
-Só a raiz do projeto é examinada (e um nível abaixo, no caso do Fluig): marcadores de build ficam no topo, e varrer a árvore inteira faria um monorepo casar com todas as stacks de uma vez. As regras estão em [`lib/detect.js`](lib/detect.js).
+As regras estão em [`lib/detect.js`](lib/detect.js).
+
+### Monorepos: rode na raiz, uma vez só
+
+Num monolito, os marcadores não ficam na raiz — ficam em cada módulo. A detecção olha a raiz **e** os módulos: subdiretórios de primeiro nível, mais os filhos das pastas-contêiner convencionais (`apps/`, `packages/`, `services/`, `modules/`, `libs/`, `projects/`).
+
+```
+meu-monolito/
+├── backend/pom.xml            → java, spring
+└── frontend/package.json      → node, react, nextjs
+```
+
+Rodando na **raiz**:
+
+```
+stack: java, spring (backend/) · node, nextjs, react, frontend (frontend/)
+módulos: backend/, frontend/
+✔ java-architect   ✔ spring-boot   ✔ spring-boot-engineer
+✔ react-expert     ✔ nextjs-developer   ✔ code-review
+```
+
+Você **não** precisa entrar em cada pasta. As duas stacks são detectadas e cada família de stack ganha vaga reservada — senão as skills de Java, que pontuam mais, tomariam todas as vagas e o React ficaria de fora. O limite de skills cresce com o número de famílias detectadas (4 para uma stack, +2 por família extra).
+
+O mesmo vale para instalar:
+
+```bash
+cd meu-monolito
+melinna skills install   # baixa as skills de Java E de React de uma vez
+```
+
+`node_modules/`, `target/`, `dist/`, `.git/` e afins são ignorados na varredura — senão uma dependência com `pom.xml` faria seu projeto Node virar Java.
+
+**Quando ainda vale entrar na pasta:** se a tarefa é claramente de um módulo só, rodar dentro dele dá um contexto comprimido menor e mais focado, já que a compressão parte do diretório atual.
+
+```bash
+cd backend && melinna task "adicionar índice na tabela de pedidos"
+```
 
 ### Como as skills são casadas
 
@@ -366,7 +405,8 @@ Nada que você acumula é gravado dentro do pacote: o npm apaga e recria o diret
 | `Módulo de compressão do caveman-code não encontrado` | Falta rodar `melinna install`. |
 | `Binário 'specify' não encontrado` | O `melinna speckit` precisa da CLI do spec-kit: `uv tool install specify-cli`. |
 | Skill errada sendo escolhida | `melinna skills list --detect` mostra a escolha. Force com `--skill <id>` e considere melhorar o `metadata.triggers` da sua skill. |
-| Stack não detectada | Confira se o arquivo-marca está na **raiz** do diretório onde você rodou o comando (veja a [tabela de detecção](#o-que-é-detectado)). |
+| Stack não detectada | Confira se o arquivo-marca existe (veja a [tabela de detecção](#o-que-é-detectado)). Em monorepo, ele pode estar fundo demais: a varredura vai até os filhos das pastas-contêiner (`apps/`, `packages/`, ...), não além. |
+| Monorepo só carrega as skills de uma stack | Deve estar corrigido — `melinna skills list --detect` mostra os módulos encontrados. Se um módulo não aparece, ele está mais fundo que o alcance da varredura; rode dentro dele. |
 
 ---
 

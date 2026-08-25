@@ -146,6 +146,39 @@ test("selectSkills prefere a skill genérica do papel no empate", () => {
   assert.ok(ids.includes("architecture-designer"), `esperava architecture-designer em ${ids}`);
 });
 
+test("selectSkills cobre todas as famílias num monorepo", () => {
+  // Regressão: num monolito Java + React as skills de Java pontuavam mais e
+  // tomavam as 4 vagas; as de React nunca chegavam ao prompt.
+  const skills = [
+    { id: "java-architect", description: "Spring", triggers: "Java, Spring", source: "x" },
+    { id: "spring-boot", description: "Spring Boot", triggers: "Spring", source: "x" },
+    { id: "spring-boot-engineer", description: "Spring Boot", triggers: "Spring", source: "x" },
+    { id: "react-expert", description: "React", triggers: "React", source: "x" },
+    { id: "nextjs-developer", description: "Next.js", triggers: "Next", source: "x" },
+    { id: "code-review", description: "Revisão", triggers: "", source: "x" },
+  ];
+  const ids = selectSkills(skills, ["java", "spring", "node", "react", "nextjs"]).map((s) => s.id);
+  assert.ok(
+    ids.some((id) => id.startsWith("java") || id.startsWith("spring")),
+    `esperava uma skill JVM em ${ids}`,
+  );
+  assert.ok(
+    ids.some((id) => id.startsWith("react") || id.startsWith("nextjs")),
+    `esperava uma skill JS em ${ids}`,
+  );
+  assert.ok(ids.includes("code-review"), `esperava review em ${ids}`);
+});
+
+test("selectSkills não incha o limite quando há só uma família", () => {
+  const skills = Array.from({ length: 20 }, (_, i) => ({
+    id: `java-skill-${i}`,
+    description: "java",
+    triggers: "java",
+    source: "x",
+  }));
+  assert.equal(selectSkills(skills, ["java", "spring"]).length, 4);
+});
+
 test("selectSkills respeita o limite", () => {
   const skills = Array.from({ length: 20 }, (_, i) => ({
     id: `java-skill-${i}`,
