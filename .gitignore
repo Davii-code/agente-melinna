@@ -1,0 +1,14 @@
+node_modules/
+
+# Gerado por `melinna start-feature` em cada projeto onde a CLI é usada —
+# não pertence ao template/repositório da própria Melinna.
+.speckit/
+
+# tools/caveman-code e tools/spec-kit são clones de repositórios de terceiros
+# (ver README "Instalação"), não código deste projeto. Mantê-los fora do
+# versionamento evita duplicar dois monorepos inteiros aqui dentro; quem
+# clonar a Melinna roda os comandos de `git clone` do README para repopulá-los.
+tools/caveman-code/
+tools/spec-kit/
+
+*.log
