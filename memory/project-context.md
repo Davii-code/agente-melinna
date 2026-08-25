@@ -1,23 +1,28 @@
-# Contexto do Projeto
+# A memória do projeto mudou de lugar
 
-<!--
-Este arquivo é carregado pelo comando `melinna explain-project` como memória
-persistente sobre o projeto atual. Edite-o manualmente para manter a IA
-alinhada com decisões, convenções e histórico que não estão óbvios no código.
--->
+Este arquivo não é mais lido pela Melinna. Ele ficou aqui só para explicar a mudança
+a quem está atualizando de uma versão anterior.
 
-## Visão geral
+## O que mudou
 
-(Descreva aqui o propósito do projeto, seu domínio e principais stakeholders.)
+Antes, `melinna explain-project` lia a memória de `memory/` **dentro do pacote da
+Melinna**. Isso tinha dois problemas:
 
-## Decisões arquiteturais
+1. A memória era a mesma para todos os projetos, embora o próprio arquivo se
+   descrevesse como "contexto do projeto atual".
+2. Numa instalação global (`npm install -g git+...`), o npm recria o diretório do
+   pacote a cada upgrade — qualquer memória escrita aqui era perdida.
 
-(Registre decisões importantes e o porquê — não o que já é derivável do código.)
+Agora a memória mora em **`.melinna/memory/` dentro de cada repositório**, junto do
+código que ela descreve, e pode ser versionada com ele.
 
-## Convenções
+## Como migrar
 
-(Padrões de código, nomenclatura, estrutura de pastas específicos deste projeto.)
+No repositório do seu projeto:
 
-## Notas conhecidas
+```bash
+melinna init-project
+```
 
-(Débitos técnicos, limitações conhecidas, áreas sensíveis que merecem cautela.)
+Isso cria `.melinna/memory/project-context.md` (e `.melinna/skills/` para skills
+próprias do projeto). Copie para lá o conteúdo que você mantinha aqui.

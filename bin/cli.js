@@ -12,7 +12,9 @@ import { review } from "../lib/commands/review.js";
 import { install } from "../lib/commands/install.js";
 import { upgrade } from "../lib/commands/upgrade.js";
 import { init } from "../lib/commands/init.js";
+import { initProject } from "../lib/commands/init-project.js";
 import { doctor } from "../lib/commands/doctor.js";
+import { skillsInstall, skillsUpdate, skillsList, skillsRegistry } from "../lib/commands/skills.js";
 import { AGENT_PRIORITY } from "../lib/agents.js";
 
 const AGENT_OPT_DESC = `força o agente a usar (${AGENT_PRIORITY.join(", ")}) em vez de autodetectar`;
@@ -47,8 +49,12 @@ program
 
 program
   .command("quick-task <descricao>")
-  .description("Monta um prompt rápido: skill + contexto comprimido do diretório atual + descrição da tarefa.")
-  .option("--skill <nome_do_arquivo>", "arquivo .md da skill a usar (em skills/custom/ ou skills/external/)")
+  .description(
+    "Monta e imprime um prompt: skills (escolhidas pela stack detectada) + contexto comprimido " +
+      "do diretório atual + descrição da tarefa. Não executa nenhum agente.",
+  )
+  .option("--skill <nome>", "força uma skill específica (id ou arquivo) em vez de autodetectar")
+  .option("--no-skill", "não carrega skill nenhuma")
   .action(async (descricao, options) => {
     try {
       await quickTask(ROOT, process.cwd(), descricao, options);
@@ -73,11 +79,13 @@ program
 program
   .command("task <descricao>")
   .description(
-    "Implementa uma task simples de ponta a ponta: monta o prompt (skill + contexto comprimido) e " +
-      "executa um agente de IA de verdade (`caveman` ou `claude`, o que estiver no PATH), validando " +
-      "com `npm test` quando existir. Sem nenhum dos dois, cai de volta para apenas imprimir o prompt.",
+    "Implementa uma task de ponta a ponta: detecta a stack do projeto, escolhe as skills " +
+      "correspondentes (mais as de arquitetura e revisão, sempre), monta o prompt com o contexto " +
+      "comprimido e executa um agente de IA de verdade, validando com `npm test` quando existir. " +
+      "Sem nenhum agente no PATH, cai de volta para apenas imprimir o prompt.",
   )
-  .option("--skill <nome_do_arquivo>", "arquivo .md da skill a usar (em skills/custom/ ou skills/external/)")
+  .option("--skill <nome>", "força uma skill específica (id ou arquivo) em vez de autodetectar")
+  .option("--no-skill", "não carrega skill nenhuma")
   .option("--agent <bin>", AGENT_OPT_DESC)
   .option("--yolo", "auto-aprova TUDO no agente, inclusive execução de shell arbitrário")
   .action(async (descricao, options) => {
@@ -108,8 +116,9 @@ program
 program
   .command("review")
   .description(
-    "Revisa as mudanças pendentes (staged + unstaged) do repositório atual com a skill code-review.md. " +
-      "Executa `caveman` ou `claude` de verdade (o que estiver no PATH); senão, imprime o prompt.",
+    "Revisa as mudanças pendentes (staged + unstaged) do repositório atual. Carrega sempre as skills " +
+      "de revisão e arquitetura, mais as da stack detectada. Executa um agente de IA em modo " +
+      "somente-leitura; sem nenhum no PATH, imprime o prompt.",
   )
   .option("--agent <bin>", AGENT_OPT_DESC)
   .action(async (options) => {
@@ -137,12 +146,86 @@ program
     }
   });
 
-program
-  .command("doctor")
-  .description("Checa o ambiente: git, specify, clones de terceiros e quais agentes de IA estão disponíveis.")
+const skills = program
+  .command("skills")
+  .description("Gerencia as skills: instala repositórios do registry, lista o que está disponível e atualiza.");
+
+skills
+  .command("install [nomes...]")
+  .description(
+    "Clona repositórios de skills em ~/.melinna/skills. Sem argumentos, instala as skills " +
+      "sempre-ativas (arquitetura e revisão) mais as que casam com a stack detectada aqui.",
+  )
+  .option("--all", "instala todos os repositórios do registry")
+  .option("--full", "clone completo (o padrão é --depth 1)")
+  .action(async (nomes, options) => {
+    try {
+      await skillsInstall(process.cwd(), nomes ?? [], options);
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+skills
+  .command("list")
+  .description("Lista as skills visíveis (projeto, usuário, pacote e registry).")
+  .option("--detect", "mostra também quais seriam escolhidas automaticamente aqui")
+  .action((options) => {
+    try {
+      skillsList(ROOT, process.cwd(), options);
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+skills
+  .command("registry")
+  .description("Mostra o catálogo de repositórios de skills e o que já está instalado.")
+  .action(() => {
+    try {
+      skillsRegistry();
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+skills
+  .command("update")
+  .description("Roda `git pull` em cada repositório de skills instalado.")
   .action(async () => {
     try {
-      const ok = await doctor(ROOT);
+      await skillsUpdate();
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("init-project")
+  .description(
+    "Cria `.melinna/` no repositório atual (memória do projeto + skills próprias) e mostra a stack detectada.",
+  )
+  .action(async () => {
+    try {
+      await initProject(process.cwd());
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("doctor")
+  .description(
+    "Checa o ambiente: git, npm, specify, clones de terceiros, skills instaladas e agentes de IA disponíveis.",
+  )
+  .action(async () => {
+    try {
+      const ok = await doctor(ROOT, process.cwd());
       if (!ok) process.exitCode = 1;
     } catch (err) {
       console.log(chalk.red(`Erro: ${err.message}`));

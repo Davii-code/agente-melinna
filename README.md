@@ -8,19 +8,23 @@ Como qualquer CLI de agente (`caveman`, `claude`, `codex`), a Melinna se instala
 
 ```bash
 npm install -g git+https://github.com/Davii-code/agente-melinna.git
-melinna install   # clona caveman-code e spec-kit em ~/.melinna/tools
-melinna doctor    # confere o ambiente e lista os agentes disponíveis
+melinna install         # clona caveman-code e spec-kit em ~/.melinna/tools
+melinna skills install  # baixa as skills da stack deste diretório + arquitetura/revisão
+melinna doctor          # confere o ambiente e lista os agentes disponíveis
 ```
 
-### Onde ficam os clones de terceiros
+### Onde fica cada coisa
 
-`caveman-code` e `spec-kit` são clones de repositórios de terceiros (ignorados pelo git, ver `.gitignore`), então **não** viajam dentro do pacote npm. `melinna install` os baixa para um diretório fora do pacote, resolvido nesta ordem:
+Nada que o usuário acumula é gravado dentro do pacote: o npm apaga e recria o diretório do pacote a cada `npm install -g`, então qualquer skill, memória ou clone escrito lá se perderia no próximo upgrade (e instalações system-wide costumam ser somente-leitura).
 
-1. `$MELINNA_HOME/tools` — se a variável estiver definida.
-2. `<repo>/tools` — num clone de desenvolvimento, quando já populado ali.
-3. `~/.melinna/tools` — o padrão numa instalação global.
+| O quê | Onde | Criado por |
+|---|---|---|
+| Clones de `caveman-code` e `spec-kit` | `~/.melinna/tools/` | `melinna install` |
+| Repositórios de skills do registry | `~/.melinna/skills/` | `melinna skills install` |
+| Suas skills pessoais | `~/.melinna/custom/` | você |
+| Memória e skills de um projeto | `<projeto>/.melinna/` | `melinna init-project` |
 
-Eles ficam no HOME em vez de dentro do `node_modules` global porque o npm apaga o diretório do pacote a cada upgrade (e instalações system-wide costumam ser somente-leitura).
+`$MELINNA_HOME` move a raiz `~/.melinna` inteira (útil em CI). Os clones de terceiros são resolvidos nesta ordem: `$MELINNA_HOME/tools` → `<repo>/tools` (num clone de desenvolvimento já populado) → `~/.melinna/tools`.
 
 ### Desenvolvimento (a partir de um clone)
 
@@ -32,10 +36,17 @@ node bin/cli.js init      # roda `npm link` e depois o doctor
 
 `melinna init` só roda `npm link` quando detecta um clone de desenvolvimento (existe um `.git/`); numa instalação global ele apenas roda o `doctor`.
 
+Os testes não precisam de rede nem de agente instalado:
+
+```bash
+npm test
+```
+
 ### Atualizar
 
 ```bash
-melinna upgrade   # git pull --ff-only nos clones de terceiros
+melinna upgrade         # git pull --ff-only nos clones de terceiros
+melinna skills update   # git pull nos repositórios de skills instalados
 npm install -g git+https://github.com/Davii-code/agente-melinna.git   # atualiza a própria Melinna
 ```
 
@@ -59,21 +70,30 @@ melinna start-feature
 
 ### `melinna quick-task <descricao>`
 
-Monta e imprime um prompt pronto para colar em um agente de IA, combinando: skill escolhida → contexto comprimido do diretório atual → descrição da tarefa.
+Monta e imprime um prompt pronto para colar em um agente de IA, combinando: skills (escolhidas automaticamente pela stack detectada) → contexto comprimido do diretório atual → descrição da tarefa.
 
 ```bash
-melinna quick-task "Adicionar validação de e-mail no formulário de cadastro" --skill code-review.md
-
-# sem --skill, lista as skills disponíveis interativamente
+# sem flags: detecta a stack e escolhe as skills sozinho
 melinna quick-task "Refatorar o módulo de autenticação"
+
+melinna quick-task "Validar e-mail no cadastro" --skill java-architect
+melinna quick-task "Só o contexto, sem skill" --no-skill
 ```
 
 ### `melinna explain-project`
 
-Gera um System Prompt combinando os arquivos de `memory/` (contexto persistente da Melinna) com um snapshot comprimido de todo o repositório atual, e imprime no terminal.
+Gera um System Prompt combinando a memória do projeto (`.melinna/memory/*.md`) com um snapshot comprimido de todo o repositório atual, e imprime no terminal. Rode `melinna init-project` antes para criar a estrutura.
 
 ```bash
 melinna explain-project
+```
+
+### `melinna init-project`
+
+Cria `.melinna/` no repositório atual — `memory/` para a memória do projeto e `skills/` para skills específicas dele — e mostra a stack detectada. Ambos são versionáveis junto com o código.
+
+```bash
+melinna init-project
 ```
 
 ### Executando de verdade: `caveman` e `specify`
@@ -108,11 +128,14 @@ Em todos os casos o prompt completo (skill + contexto + tarefa) vai por **stdin*
 
 ### `melinna task <descricao>`
 
-Task simples de ponta a ponta: monta o prompt (skill opcional + contexto comprimido + descrição) e roda o agente de IA para implementar de verdade no diretório atual. Depois, valida rodando `npm test` se o `package.json` tiver um script de teste real.
+Task de ponta a ponta: detecta a stack, escolhe as skills, monta o prompt (skills + contexto comprimido + descrição) e roda o agente de IA para implementar de verdade no diretório atual. Depois, valida rodando `npm test` se o `package.json` tiver um script de teste real.
 
 ```bash
-melinna task "Adicionar validação de e-mail no formulário de cadastro" --skill code-review.md
+# a stack é detectada e as skills escolhidas sozinhas
+melinna task "Adicionar validação de e-mail no formulário de cadastro"
+
 melinna task "Refatorar o módulo de autenticação" --agent codex
+melinna task "Ajuste pontual" --skill java-architect
 ```
 
 ### `melinna speckit <feature-name>`
@@ -125,7 +148,7 @@ melinna speckit "checkout-com-pix" --integration claude
 
 ### `melinna review`
 
-Revisa as mudanças pendentes (staged + unstaged, via `git diff`) do repositório atual usando a skill [`skills/custom/code-review.md`](skills/custom/code-review.md) e roda o agente de IA em modo somente-leitura para executar a revisão de verdade, sem alterar arquivos.
+Revisa as mudanças pendentes (staged + unstaged, via `git diff`) do repositório atual e roda o agente de IA em modo somente-leitura, sem alterar arquivos. Carrega sempre uma skill de revisão e uma de arquitetura, mais as da stack detectada — então um repositório Java é revisado com as regras de Java sem você pedir.
 
 ```bash
 melinna review
@@ -134,7 +157,7 @@ melinna review --agent agy
 
 ### `melinna doctor`
 
-Checa o ambiente e imprime o que está disponível: `git`, `specify`, os clones de terceiros (e onde eles foram resolvidos) e cada agente de IA suportado.
+Checa o ambiente e imprime o que está disponível: `git`, `npm`, `specify`, os clones de terceiros, as skills instaladas (avisando se as sempre-ativas faltam), a stack detectada aqui e cada agente de IA suportado.
 
 ```bash
 melinna doctor
@@ -147,18 +170,70 @@ melinna --help
 melinna <comando> --help
 ```
 
-## Adicionando skills
+## Skills
 
-Skills são arquivos `.md` livres — qualquer texto que sirva de instrução/persona para a IA. Coloque-os em:
+### Autodetecção: você não escolhe a skill
 
-- `skills/custom/` — skills escritas por você para este ambiente.
-- `skills/external/` — skills importadas de outra fonte.
+`task`, `quick-task` e `review` detectam a stack do diretório pelos arquivos-marca (`pom.xml`, `build.gradle`, `package.json`, `pubspec.yaml`, `angular.json`, `application.info`, fontes `.prw`/`.tlpp`) e carregam sozinhos as skills correspondentes. As regras estão em [`lib/detect.js`](lib/detect.js).
 
-Não há um formato obrigatório rígido; os exemplos em `skills/custom/code-review.md` e `skills/custom/refactor.md` seguem o padrão: título, seção de diretrizes, seção de saída esperada. O nome do arquivo (ex.: `code-review.md`) é o identificador usado em `--skill` e nos seletores interativos.
+**Arquitetura e revisão entram sempre**, mesmo quando a stack já encheu as vagas — um projeto Fluig recebe as skills de Fluig *e* a validação arquitetural. Use `--skill <id>` para forçar uma específica ou `--no-skill` para desligar.
+
+Veja o que seria escolhido aqui:
+
+```bash
+melinna skills list --detect
+```
+
+### Instalando skills
+
+O catálogo em [`lib/registry.js`](lib/registry.js) reúne repositórios públicos de skills. `melinna skills install` sem argumentos instala as sempre-ativas (arquitetura e revisão) mais as que casam com a stack do diretório atual.
+
+```bash
+melinna skills registry          # vê o catálogo e o que já está instalado
+melinna skills install           # autodetecta a stack e instala o que serve
+melinna skills install fluig java # ou escolhe explicitamente
+melinna skills install --all     # tudo
+melinna skills update            # git pull em cada repositório instalado
+```
+
+Os repositórios são **clonados** para `~/.melinna/skills/`, não copiados arquivo a arquivo: as skills referenciam `references/` e `assets/` vizinhos por caminho relativo, e clonar mantém esses links, a autoria e a licença de cada projeto intactos.
+
+| Nome | Cobre | Origem |
+|---|---|---|
+| `architecture` *(sempre)* | Revisão arquitetural, microserviços, cloud | [keez97/claude-architecture-skills](https://github.com/keez97/claude-architecture-skills) |
+| `code-review` *(sempre)* | Review multi-stack | [tt-a1i/code-review-skill](https://github.com/tt-a1i/code-review-skill) |
+| `fluig` | Widgets Fluig, i18n, a11y, code review | [totvs/fluig-agent-skills](https://github.com/totvs/fluig-agent-skills) |
+| `advpl` | ADVPL/TLPP, Protheus | [totvs/engpro-advpl-tlpp-skills](https://github.com/totvs/engpro-advpl-tlpp-skills) |
+| `spring-optimization` | Spring Boot, migração Java 17→21 | [claudioed/claude-skills](https://github.com/claudioed/claude-skills) |
+| `spring-template` | Design patterns, clean code, JPA | [piomin/claude-ai-spring-boot](https://github.com/piomin/claude-ai-spring-boot) |
+| `spring-marketplace` | CRUD vs DDD/CQRS por complexidade | [a-pavithraa/springboot-skills-marketplace](https://github.com/a-pavithraa/springboot-skills-marketplace) |
+| `spring-mcp` | Spring Boot + MCP servers com Spring AI | [rrezartprebreza/spring-boot-skills](https://github.com/rrezartprebreza/spring-boot-skills) |
+| `fullstack` | 67 skills: java-architect, angular, nestjs, react | [Jeffallan/claude-skills](https://github.com/Jeffallan/claude-skills) |
+| `frontend-design` | Skill oficial da Anthropic contra "AI slop" visual | [anthropics/claude-code](https://github.com/anthropics/claude-code) |
+| `cloudflare-react` | Cloudflare + React + Tailwind v4 | [jezweb/claude-skills](https://github.com/jezweb/claude-skills) |
+| `flutter` | BLoC/Cubit, Firebase, Material 3, testes | [Arcturus91/claude-flutter-skill](https://github.com/Arcturus91/claude-flutter-skill) |
+| `flutter-pipeline` | Flutter do Figma ao deploy | [cleydson/flutter-claude-code](https://github.com/cleydson/flutter-claude-code) |
+
+### Escrevendo suas próprias
+
+Uma skill é um `.md` com frontmatter YAML (`name`, `description`, opcionalmente `metadata.triggers`) — a convenção do Claude Code, `<nome>/SKILL.md`. Um `.md` solto também funciona: o nome do arquivo vira o id.
+
+As raízes são procuradas nesta ordem, e a primeira que tiver o id ganha:
+
+1. `<projeto>/.melinna/skills/` — skills deste repositório (criadas por `melinna init-project`).
+2. `~/.melinna/custom/` — suas skills pessoais, valem em todo projeto.
+3. `skills/custom/` e `skills/external/` do pacote — as que vêm junto.
+4. `~/.melinna/skills/` — os repositórios instalados pelo registry.
+
+O projeto vem primeiro para que um repositório possa sobrescrever uma skill genérica pela sua versão sem renomear nada.
+
+`metadata.triggers` melhora a autodetecção: as palavras ali são casadas contra as tags da stack detectada.
 
 ## Memória do projeto
 
-`memory/*.md` é lido pelo `melinna explain-project` como contexto persistente sobre você/seu ambiente de trabalho — edite `memory/project-context.md` manualmente (ou adicione novos arquivos `.md` na pasta) com decisões, convenções e histórico que não são óbvios a partir do código.
+`melinna init-project` cria `.melinna/memory/project-context.md` no repositório atual. `melinna explain-project` lê todo `.md` dessa pasta como contexto persistente — decisões, convenções e histórico que não são óbvios a partir do código.
+
+A memória mora **no projeto**, não no pacote da Melinna: ela descreve aquele repositório, é diferente para cada um, e assim pode ser versionada junto com o código. (Em versões anteriores ela ficava em `memory/` dentro do pacote, onde era compartilhada entre todos os projetos e se perdia a cada `npm install -g`.)
 
 ## Limitações conhecidas / próximos passos
 
@@ -166,6 +241,7 @@ Não há um formato obrigatório rígido; os exemplos em `skills/custom/code-rev
 - `start-feature` não preenche automaticamente os placeholders de princípios da constituição (`[PRINCIPLE_1_NAME]` etc.) — isso fica para revisão manual ou uma etapa futura de IA; para o fluxo completo e já preenchido, use `melinna speckit`.
 - `task`/`review` rodam o agente em modo não interativo, sem revisão humana no meio — rode em um diretório sob controle de versão e confira o diff antes de aceitar.
 - Das cinco integrações de agente, só `claude` e `agy` foram executadas de verdade nesta máquina; as receitas de `caveman`, `cursor-agent` e `codex` em [`lib/agents.js`](lib/agents.js) vieram da documentação oficial de cada CLI e ainda não foram exercitadas end-to-end. Se alguma flag mudar, é só ajustar o registro — os comandos não precisam saber.
-- A validação de `melinna task` é só `npm test` (quando existe um script real) — não roda lint/typecheck nem detecta stacks não-Node.
-- Não há testes automatizados para o código da própria Melinna ainda; os comandos foram validados manualmente.
+- A validação de `melinna task` é só `npm test` (quando existe um script real) — não roda lint/typecheck, e não conhece `mvn test`, `gradle test`, `flutter test` nem os equivalentes das outras stacks que a detecção já identifica.
+- A autodetecção de skills é lexical: casa as tags da stack contra id, `metadata.triggers` e descrição. Funciona bem quando a skill se nomeia pela tecnologia, e erra quando não — `melinna skills list --detect` mostra a escolha antes de gastar uma execução de agente.
 - `quick-task`/`explain-project` truncam o snapshot pelo orçamento de tokens (`tokenBudget`); em repositórios muito grandes pode valer expor isso como flag no futuro.
+- Os testes (`npm test`) cobrem detecção de stack, seleção de skills, o registry e a resolução de binários; os comandos que executam agentes ainda são validados só manualmente.
