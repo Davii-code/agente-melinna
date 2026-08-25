@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(git --version)",
+      "Bash(npm init *)",
+      "Bash(npm pkg *)",
+      "Bash(npm install *)",
+      "Bash(git clone *)",
+      "Bash(node -e \"fetch\\('https://github.com'\\).then\\(r=>console.log\\('OK',r.status\\)\\).catch\\(e=>console.log\\('FAIL', e.message\\)\\)\")",
+      "Bash(node -e \"fetch\\('https://registry.npmjs.org/chalk'\\).then\\(r=>console.log\\('OK',r.status\\)\\).catch\\(e=>console.log\\('FAIL', e.message\\)\\)\")",
+      "Bash(npm config *)",
+      "Read(//c/Users/enge.davi/**)",
+      "Bash(curl -sI https://registry.npmjs.org/chalk)",
+      "Bash(env)",
+      "Bash(npm view *)",
+      "Bash(node --help)",
+      "Bash(NODE_OPTIONS=\"--use-system-ca\" node -e \"fetch\\('https://registry.npmjs.org/chalk'\\).then\\(r=>console.log\\('OK',r.status\\)\\).catch\\(e=>console.log\\('FAIL', e.message\\)\\)\")"
+    ]
+  }
+}
