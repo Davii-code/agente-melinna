@@ -40,6 +40,7 @@ Os dois caminhos convivem. Veja [Usando dentro do seu agente](#usando-dentro-do-
   - [Monorepos](#monorepos-rode-na-raiz-uma-vez-só)
 - [Instalando skills](#instalando-skills)
 - [Escrevendo suas próprias skills](#escrevendo-suas-próprias-skills)
+- [Economia de token](#economia-de-token)
 - [Memória do projeto](#memória-do-projeto)
 - [Agentes de IA](#agentes-de-ia)
 - [Onde fica cada coisa](#onde-fica-cada-coisa)
@@ -158,6 +159,7 @@ Para Cursor (`.cursor/mcp.json`), Codex (`~/.codex/config.toml`) e os demais, `m
 | `melinna_skills_update` | `melinna skills update` |
 | `melinna_init_project` | `melinna init-project` |
 | `melinna_speckit` | `melinna speckit` |
+| `melinna_config` | `melinna config` |
 | `melinna_doctor` | `melinna doctor` |
 
 > **Diferença deliberada:** dentro de um agente, `melinna_task` e `melinna_review` **preparam** o material (stack, skills, contexto comprimido, diff) e devolvem ao agente que já está rodando — em vez de disparar um segundo agente por baixo. O agente já é o executor; subprocessar outro seria recursão sem ganho e o dobro do custo. No terminal, `melinna task` continua executando de ponta a ponta.
@@ -296,6 +298,8 @@ Resumindo: `install` = ferramentas, `skills install` = skills, `init` = desenvol
 
 | Comando | O que faz |
 |---|---|
+| `melinna config economy [nivel]` | Escolhe quanto token gastar por tarefa |
+| `melinna config show` | Mostra a configuração em vigor |
 | `melinna mcp` | Sobe o servidor MCP (o agente chama, você não) |
 | `melinna mcp --setup` | Imprime a configuração para Claude, Cursor, Codex |
 | `melinna sync` | Escreve as skills no formato nativo de cada agente |
@@ -487,6 +491,72 @@ O projeto vem primeiro para que um repositório possa sobrescrever uma skill gen
 
 ---
 
+## Economia de token
+
+Você escolhe quanto gastar por tarefa. O padrão é o mais caro e o mais completo.
+
+```bash
+melinna config economy        # escolhe na lista
+melinna config economy lean   # ou direto
+melinna config show           # o que está valendo e de onde veio
+```
+
+A escolha fica em `~/.melinna/config.json` e vale para **todos os comandos e também dentro do agente**, via MCP.
+
+### Os três perfis
+
+Medido com `quick-task` num mesmo projeto Java/Spring:
+
+| Perfil | Prompt | Diferença | O que muda |
+|---|---|---|---|
+| `full` *(padrão)* | ~36.700 tokens | — | Todas as skills escolhidas, com os arquivos de referência |
+| `lean` | ~8.600 tokens | **−77%** | Só o `SKILL.md` de cada skill, sem as referências |
+| `max` | ~4.500 tokens | **−88%** | Duas skills, sem referências, mapa menor e comprimido |
+
+O corte vem de onde o custo está: **o pacote de skills domina o prompt**, e o mapa do repositório é ruído perto disso. Por isso os perfis mexem primeiro em quantas skills entram e se as referências vão junto — não na compressão do contexto.
+
+### Sobrepondo pontualmente
+
+```bash
+melinna task "..." --economy max      # só nesta execução
+melinna review --economy lean
+MELINNA_ECONOMY=lean melinna task ...  # útil em CI
+```
+
+Precedência: `--economy` → `MELINNA_ECONOMY` → config salva → `full`.
+
+Dentro do agente, a mesma escolha:
+
+```
+usa a melinna em modo econômico pra implementar X
+muda a economia da melinna pra lean
+```
+
+O agente chama `melinna_config`, ou passa `economy` direto em `melinna_task` / `melinna_review`.
+
+### Sobre a compressão do caveman-code
+
+O `caveman-code` tem um módulo de compressão além do repomap. A Melinna o usa **só no perfil `max`, e só no mapa do repositório** — nunca no texto das skills.
+
+O motivo é o algoritmo:
+
+```js
+// Single line: drop every Nth word, preserving inter-word whitespace
+const keepEvery = Math.round(1 / clamped);
+```
+
+Ele descarta linhas de menor peso e, em linha única, uma palavra a cada N. No mapa de símbolos isso degrada de forma aceitável — perde as entradas menos relevantes. Numa instrução de skill, **corromperia a instrução**. Há um teste que trava essa separação.
+
+O caminho de qualidade desse módulo é o LLMLingua-2 real, que exige ONNX runtime e download de modelo — a dependência nativa pesada que a Melinna evita de propósito.
+
+### Quando usar qual
+
+- **`full`** — o padrão. Use enquanto o custo não incomodar.
+- **`lean`** — corta 77% e mantém todas as skills. É o melhor custo-benefício: as referências costumam ser detalhe que o agente busca só quando precisa. Via MCP ele ainda pode puxá-las com `melinna_get_skill`.
+- **`max`** — quando o custo importa mais que o acerto de primeira. Duas skills e mapa comprimido: o agente pode perder contexto.
+
+---
+
 ## Memória do projeto
 
 Contexto que não dá para deduzir lendo o código — decisões arquiteturais, convenções, restrições de negócio.
@@ -576,6 +646,8 @@ Nada que você acumula é gravado dentro do pacote: o npm apaga e recria o diret
 | No agente: "nenhuma skill casou" | As skills daquela stack não foram baixadas ainda. Peça *"instala as skills da melinna"* (ou rode `melinna skills install` no projeto). |
 | `melinna mcp` parece travado no terminal | Correto — é um servidor que fala JSON-RPC pela stdio, não uma ferramenta interativa. Quem chama é o agente. Use `melinna mcp --setup` para ver como configurar. |
 | Skills sincronizadas ficaram desatualizadas | `melinna sync` é estático. Rode de novo após `melinna skills update` ou ao trocar de stack. |
+| Prompt grande demais / custo alto | `melinna config economy lean` corta ~77%. Veja [Economia de token](#economia-de-token). |
+| Agente perdendo contexto | Se você está em `max`, volte para `lean` ou `full`: `melinna config economy lean`. |
 
 ---
 

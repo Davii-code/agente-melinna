@@ -16,7 +16,11 @@ import { initProject } from "../lib/commands/init-project.js";
 import { doctor } from "../lib/commands/doctor.js";
 import { skillsInstall, skillsUpdate, skillsList, skillsRegistry } from "../lib/commands/skills.js";
 import { sync } from "../lib/commands/sync.js";
+import { configEconomy, configShow } from "../lib/commands/config.js";
+import { PROFILES } from "../lib/config.js";
 import { AGENT_PRIORITY } from "../lib/agents.js";
+
+const ECONOMY_OPT_DESC = `perfil de economia de token nesta execução (${Object.keys(PROFILES).join(", ")})`;
 
 const AGENT_OPT_DESC = `força o agente a usar (${AGENT_PRIORITY.join(", ")}) em vez de autodetectar`;
 
@@ -102,6 +106,7 @@ program
   )
   .option("--skill <nome>", "força uma skill específica (id ou arquivo) em vez de autodetectar")
   .option("--no-skill", "não carrega skill nenhuma")
+  .option("--economy <nivel>", ECONOMY_OPT_DESC)
   .action(async (descricao, options) => {
     try {
       await quickTask(ROOT, process.cwd(), descricao, options);
@@ -133,6 +138,7 @@ program
   )
   .option("--skill <nome>", "força uma skill específica (id ou arquivo) em vez de autodetectar")
   .option("--no-skill", "não carrega skill nenhuma")
+  .option("--economy <nivel>", ECONOMY_OPT_DESC)
   .option("--agent <bin>", AGENT_OPT_DESC)
   .option("--yolo", "auto-aprova TUDO no agente, inclusive execução de shell arbitrário")
   .action(async (descricao, options) => {
@@ -168,6 +174,7 @@ program
       "somente-leitura; sem nenhum no PATH, imprime o prompt.",
   )
   .option("--agent <bin>", AGENT_OPT_DESC)
+  .option("--economy <nivel>", ECONOMY_OPT_DESC)
   .action(async (options) => {
     try {
       await review(ROOT, process.cwd(), options);
@@ -245,6 +252,37 @@ skills
   .action(async () => {
     try {
       await skillsUpdate();
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+const config = program
+  .command("config")
+  .description("Preferências da Melinna, salvas em ~/.melinna/config.json e válidas também via MCP.");
+
+config
+  .command("economy [nivel]")
+  .description(
+    `Escolhe quanto token gastar por tarefa (${Object.keys(PROFILES).join(", ")}). ` +
+      "Sem o nível, pergunta na lista.",
+  )
+  .action(async (nivel) => {
+    try {
+      await configEconomy(nivel);
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+config
+  .command("show")
+  .description("Mostra a configuração em vigor, de onde ela veio e os perfis disponíveis.")
+  .action(() => {
+    try {
+      configShow();
     } catch (err) {
       console.log(chalk.red(`Erro: ${err.message}`));
       process.exitCode = 1;
