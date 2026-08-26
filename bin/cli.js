@@ -15,12 +15,51 @@ import { init } from "../lib/commands/init.js";
 import { initProject } from "../lib/commands/init-project.js";
 import { doctor } from "../lib/commands/doctor.js";
 import { skillsInstall, skillsUpdate, skillsList, skillsRegistry } from "../lib/commands/skills.js";
+import { sync } from "../lib/commands/sync.js";
 import { AGENT_PRIORITY } from "../lib/agents.js";
 
 const AGENT_OPT_DESC = `força o agente a usar (${AGENT_PRIORITY.join(", ")}) em vez de autodetectar`;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
+
+/**
+ * Instruções de configuração do servidor MCP em cada agente.
+ *
+ * Os agentes leem o servidor de arquivos de config diferentes, mas todos usam a
+ * mesma forma: um comando a executar. Como a Melinna já está no PATH depois da
+ * instalação global, o comando é sempre `melinna mcp`.
+ */
+function printMcpSetup() {
+  const json = JSON.stringify(
+    { mcpServers: { melinna: { command: "melinna", args: ["mcp"] } } },
+    null,
+    2,
+  )
+    .split("\n")
+    .map((line) => `    ${line}`)
+    .join("\n");
+
+  console.log(chalk.bold("\nClaude Code"));
+  console.log(chalk.dim("  Um comando, sem editar arquivo:"));
+  console.log("    claude mcp add melinna -- melinna mcp");
+
+  console.log(chalk.bold("\nCursor"));
+  console.log(chalk.dim("  .cursor/mcp.json (no projeto) ou ~/.cursor/mcp.json (global):"));
+  console.log(json);
+
+  console.log(chalk.bold("\nCodex"));
+  console.log(chalk.dim("  ~/.codex/config.toml:"));
+  console.log('    [mcp_servers.melinna]\n    command = "melinna"\n    args = ["mcp"]');
+
+  console.log(chalk.bold("\nOutros clientes MCP (Antigravity, Windsurf, Zed)"));
+  console.log(chalk.dim("  Aponte para o mesmo comando:"));
+  console.log("    melinna mcp");
+
+  console.log(chalk.dim("\nDepois de configurar, reinicie o agente e peça algo como:"));
+  console.log(chalk.dim('  "usa a melinna para preparar: adicionar validação de e-mail no cadastro"'));
+  console.log("");
+}
 
 const program = new Command();
 
@@ -198,6 +237,51 @@ skills
   .action(async () => {
     try {
       await skillsUpdate();
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("mcp")
+  .description(
+    "Sobe o servidor MCP na stdio, expondo todos os comandos da Melinna como ferramentas para " +
+      "Claude Code, Cursor, Antigravity, Codex — qualquer cliente MCP. Não use direto no terminal: " +
+      "configure no agente (veja `melinna mcp --setup`).",
+  )
+  .option("--setup", "imprime o trecho de configuração para cada agente, sem subir o servidor")
+  .action(async (options) => {
+    try {
+      if (options.setup) {
+        printMcpSetup();
+        return;
+      }
+      const { startMcpServer } = await import("../lib/mcp.js");
+      await startMcpServer(ROOT);
+    } catch (err) {
+      // Em modo servidor a stdout é o canal do protocolo — erro vai para stderr.
+      console.error(`Erro: ${err.message}`);
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("sync")
+  .description(
+    "Escreve as skills no formato nativo de cada agente (Claude Code, Cursor, AGENTS.md), para " +
+      "usá-las de dentro do agente sem passar pela Melinna. Complementa o `melinna mcp`.",
+  )
+  .option(
+    "--target <alvos...>",
+    "quais agentes sincronizar: claude, cursor, agents (padrão: todos)",
+  )
+  .option("--all", "sincroniza todas as skills, não só as da stack detectada")
+  .option("--global", "no Claude Code, escreve em ~/.claude/skills em vez de .claude/skills do projeto")
+  .option("--clean", "apaga o diretório de destino antes de escrever")
+  .action(async (options) => {
+    try {
+      await sync(ROOT, process.cwd(), { ...options, targets: options.target });
     } catch (err) {
       console.log(chalk.red(`Erro: ${err.message}`));
       process.exitCode = 1;

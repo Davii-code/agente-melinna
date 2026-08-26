@@ -16,11 +16,24 @@ Executando `claude` para implementar a tarefa...
 
 Você não escolheu skill, não escolheu agente, não montou prompt.
 
+**Ou, sem sair do seu agente.** Configurada como servidor MCP, a Melinna vira ferramenta dentro do Claude Code, Cursor, Codex e Antigravity — você conversa normalmente e o agente carrega as skills certas sozinho:
+
+```
+você:    implementa validação de e-mail no cadastro
+agente:  [chama melinna_task]
+         → stack: java, spring (backend/)
+         → skills: java-architect, spring-boot, code-review
+         (implementa já com as convenções da stack)
+```
+
+Os dois caminhos convivem. Veja [Usando dentro do seu agente](#usando-dentro-do-seu-agente).
+
 ---
 
 ## Índice
 
 - [Começando](#começando)
+- [Usando dentro do seu agente](#usando-dentro-do-seu-agente)
 - [Os quatro comandos parecidos](#os-quatro-comandos-parecidos)
 - [Todos os comandos](#todos-os-comandos)
 - [Como a Melinna escolhe as skills](#como-a-melinna-escolhe-as-skills)
@@ -85,6 +98,17 @@ Mostra o que está instalado e o que falta. Se ele diz `✔ Ambiente pronto.`, v
 melinna task "sua tarefa aqui"
 ```
 
+### 6. Ligue no seu agente
+
+Para usar a Melinna de dentro do Claude Code, Cursor ou Codex em vez do terminal:
+
+```bash
+claude mcp add melinna -- melinna mcp   # Claude Code
+melinna mcp --setup                     # os demais agentes
+```
+
+Detalhes em [Usando dentro do seu agente](#usando-dentro-do-seu-agente).
+
 ### Opcional: memória do projeto
 
 ```bash
@@ -92,6 +116,98 @@ melinna init-project
 ```
 
 Cria `.melinna/` no repositório para você guardar contexto que não dá para deduzir do código (decisões, convenções, restrições). Versione junto com o projeto.
+
+---
+
+## Usando dentro do seu agente
+
+Ninguém abre um terminal para rodar `melinna task` quando já está dentro do Claude ou do Cursor. Por isso há duas portas de entrada, e elas compartilham o mesmo acervo de skills.
+
+### Opção A — servidor MCP (recomendado)
+
+A Melinna expõe **todos os seus comandos como ferramentas MCP**. O agente as chama sozinho durante a conversa, e a autodetecção roda na hora.
+
+```bash
+melinna mcp --setup   # imprime o trecho de configuração de cada agente
+```
+
+Para o Claude Code é um comando só:
+
+```bash
+claude mcp add melinna -- melinna mcp
+```
+
+Confira com `claude mcp list` — deve aparecer `melinna: melinna mcp - ✔ Connected`.
+
+Para Cursor (`.cursor/mcp.json`), Codex (`~/.codex/config.toml`) e os demais, `melinna mcp --setup` imprime o formato certo.
+
+**Ferramentas expostas** — os mesmos comandos do CLI:
+
+| Ferramenta MCP | Equivale a |
+|---|---|
+| `melinna_task` | `melinna task` |
+| `melinna_review` | `melinna review` |
+| `melinna_detect_stack` | a detecção usada por todos os comandos |
+| `melinna_explain_project` | `melinna explain-project` |
+| `melinna_skills_list` | `melinna skills list --detect` |
+| `melinna_get_skill` | lê uma skill inteira pelo id |
+| `melinna_skills_install` | `melinna skills install` |
+| `melinna_skills_registry` | `melinna skills registry` |
+| `melinna_skills_update` | `melinna skills update` |
+| `melinna_init_project` | `melinna init-project` |
+| `melinna_speckit` | `melinna speckit` |
+| `melinna_doctor` | `melinna doctor` |
+
+> **Diferença deliberada:** dentro de um agente, `melinna_task` e `melinna_review` **preparam** o material (stack, skills, contexto comprimido, diff) e devolvem ao agente que já está rodando — em vez de disparar um segundo agente por baixo. O agente já é o executor; subprocessar outro seria recursão sem ganho e o dobro do custo. No terminal, `melinna task` continua executando de ponta a ponta.
+
+### Opção B — `melinna sync` (sem MCP)
+
+Escreve as skills no formato nativo de cada agente. Serve para quem não usa MCP, ou para ter as skills disponíveis no menu do próprio agente.
+
+```bash
+cd meu-projeto
+melinna sync
+```
+
+```
+Stack detectada: java, spring
+Sincronizando 12 skill(s): java-architect, spring-boot, code-review, ...
+
+✔ Claude Code   (.claude/skills/)
+✔ Cursor        (.cursor/rules/)
+✔ AGENTS.md     (bloco criado)
+```
+
+| Alvo | O que escreve |
+|---|---|
+| `claude` | `.claude/skills/<id>/SKILL.md` (ou `~/.claude/skills/` com `--global`) |
+| `cursor` | `.cursor/rules/<id>.mdc` |
+| `agents` | Bloco gerenciado dentro de `AGENTS.md` — lido por Codex, Antigravity e Cursor |
+
+```bash
+melinna sync --target claude cursor   # só alguns alvos
+melinna sync --all                    # todas as skills, não só as da stack
+melinna sync --global                 # Claude Code: no HOME em vez do projeto
+melinna sync --clean                  # apaga o destino antes de escrever
+```
+
+Por padrão sincroniza até 12 skills — as que casam com a stack. Despejar as 200+ do registry deixaria o menu do agente inutilizável.
+
+As skills são **copiadas**, não linkadas: symlink no Windows exige modo desenvolvedor ou privilégio de administrador, e falhar na metade seria pior. Rode `melinna sync` de novo depois de `melinna skills update` ou ao trocar de stack.
+
+O bloco em `AGENTS.md` fica entre marcadores `<!-- BEGIN MELINNA -->` e `<!-- END MELINNA -->`; o resto do arquivo é preservado.
+
+### MCP ou sync?
+
+| | MCP | sync |
+|---|---|---|
+| Autodetecção em tempo real | Sim | Não (congelada na hora do sync) |
+| Precisa configurar por agente | Sim, uma vez | Não |
+| Funciona sem suporte a MCP | Não | Sim |
+| Contexto comprimido sob demanda | Sim | Não |
+| Precisa re-rodar ao mudar de stack | Não | Sim |
+
+Dá para usar os dois ao mesmo tempo — é o que eu recomendo: MCP para o cérebro dinâmico, sync para as skills ficarem visíveis no menu do agente.
 
 ---
 
@@ -136,6 +252,14 @@ Resumindo: `install` = ferramentas, `skills install` = skills, `init` = desenvol
 | `melinna skills list [--detect]` | Lista as skills disponíveis; `--detect` mostra quais seriam escolhidas aqui |
 | `melinna skills registry` | Mostra o catálogo e o que já está instalado |
 | `melinna skills update` | `git pull` em cada repositório de skills |
+
+**Dentro do agente**
+
+| Comando | O que faz |
+|---|---|
+| `melinna mcp` | Sobe o servidor MCP (o agente chama, você não) |
+| `melinna mcp --setup` | Imprime a configuração para Claude, Cursor, Codex |
+| `melinna sync` | Escreve as skills no formato nativo de cada agente |
 
 **Ambiente**
 
@@ -407,6 +531,9 @@ Nada que você acumula é gravado dentro do pacote: o npm apaga e recria o diret
 | Skill errada sendo escolhida | `melinna skills list --detect` mostra a escolha. Force com `--skill <id>` e considere melhorar o `metadata.triggers` da sua skill. |
 | Stack não detectada | Confira se o arquivo-marca existe (veja a [tabela de detecção](#o-que-é-detectado)). Em monorepo, ele pode estar fundo demais: a varredura vai até os filhos das pastas-contêiner (`apps/`, `packages/`, ...), não além. |
 | Monorepo só carrega as skills de uma stack | Deve estar corrigido — `melinna skills list --detect` mostra os módulos encontrados. Se um módulo não aparece, ele está mais fundo que o alcance da varredura; rode dentro dele. |
+| Agente não vê as ferramentas da Melinna | Confira o registro: `claude mcp list` deve mostrar `melinna: melinna mcp - ✔ Connected`. Reinicie o agente depois de configurar. |
+| `melinna mcp` parece travado no terminal | Correto — é um servidor que fala JSON-RPC pela stdio, não uma ferramenta interativa. Quem chama é o agente. Use `melinna mcp --setup` para ver como configurar. |
+| Skills sincronizadas ficaram desatualizadas | `melinna sync` é estático. Rode de novo após `melinna skills update` ou ao trocar de stack. |
 
 ---
 

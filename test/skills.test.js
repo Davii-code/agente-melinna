@@ -3,7 +3,13 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseFrontmatter, listSkills, readSkill, selectSkills } from "../lib/skills.js";
+import {
+  parseFrontmatter,
+  listSkills,
+  readSkill,
+  selectSkills,
+  stripFrontmatter,
+} from "../lib/skills.js";
 
 /** Monta um pacote Melinna falso com as skills pedidas, e devolve sua raiz. */
 function fixtureRoot(skills) {
@@ -35,6 +41,39 @@ test("parseFrontmatter lê name, description e metadata.triggers", () => {
 
 test("parseFrontmatter devolve vazio sem frontmatter", () => {
   assert.deepEqual(parseFrontmatter("# Só um título\n"), {});
+});
+
+test("parseFrontmatter resolve escalar de bloco YAML (description: >)", () => {
+  // Regressão: várias skills do registry usam `description: >` com o texto nas
+  // linhas seguintes. O parser pegava literalmente ">" como descrição.
+  const meta = parseFrontmatter(
+    ["---", "name: spring-batch", "description: >", "  Use ao construir jobs", "  em lote.", "---", "", "# X"].join(
+      "\n",
+    ),
+  );
+  assert.equal(meta.name, "spring-batch");
+  assert.equal(meta.description, "Use ao construir jobs em lote.");
+});
+
+test("parseFrontmatter aceita escalar literal (|) e CRLF", () => {
+  const meta = parseFrontmatter("---\r\nname: x\r\ndescription: |\r\n  Linha um.\r\n---\r\n\r\n# X");
+  assert.equal(meta.name, "x");
+  assert.equal(meta.description, "Linha um.");
+});
+
+test("stripFrontmatter remove o bloco, inclusive com CRLF", () => {
+  // Regressão: `melinna sync` escreve seu próprio frontmatter por cima; sem
+  // tolerar CRLF o original sobrava no corpo e o arquivo saía com dois.
+  for (const eol of ["\n", "\r\n"]) {
+    const doc = ["---", "name: x", "description: y", "---", "", "# Corpo", ""].join(eol);
+    const body = stripFrontmatter(doc);
+    assert.ok(body.startsWith("# Corpo"), `sobrou frontmatter com EOL ${JSON.stringify(eol)}: ${body.slice(0, 40)}`);
+    assert.ok(!body.includes("name: x"));
+  }
+});
+
+test("stripFrontmatter não mexe em documento sem frontmatter", () => {
+  assert.equal(stripFrontmatter("# Só título\n"), "# Só título\n");
 });
 
 test("listSkills acha SKILL.md e .md solto", (t) => {
