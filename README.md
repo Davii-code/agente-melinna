@@ -26,6 +26,12 @@ agente:  [chama melinna_task]
          (implementa já com as convenções da stack)
 ```
 
+Também para entender antes de mexer:
+
+```bash
+melinna ask "como funciona a autenticação nesse projeto?"
+```
+
 Os dois caminhos convivem. Veja [Usando dentro do seu agente](#usando-dentro-do-seu-agente).
 
 ---
@@ -149,6 +155,7 @@ Para Cursor (`.cursor/mcp.json`), Codex (`~/.codex/config.toml`) e os demais, `m
 | Ferramenta MCP | Equivale a |
 |---|---|
 | `melinna_task` | `melinna task` |
+| `melinna_ask` | `melinna ask` |
 | `melinna_review` | `melinna review` |
 | `melinna_detect_stack` | a detecção usada por todos os comandos |
 | `melinna_explain_project` | `melinna explain-project` |
@@ -179,10 +186,13 @@ Depois disso, é só conversar:
 | Você pede | O agente chama |
 |---|---|
 | "implementa validação de e-mail no cadastro" | `melinna_task` |
+| "como funciona a autenticação aqui?" | `melinna_ask` |
+| "me explica esse projeto" | `melinna_ask` |
 | "revisa minhas mudanças pendentes" | `melinna_review` |
 | "que stack é esse projeto?" | `melinna_detect_stack` |
-| "me explica esse projeto" | `melinna_explain_project` |
+| "me dá o contexto geral do projeto" | `melinna_explain_project` |
 | "que skills você usaria aqui?" | `melinna_skills_list` |
+| "muda a economia pra lean" | `melinna_config` |
 
 Se ele não chamar sozinho, force pelo nome:
 
@@ -269,50 +279,294 @@ Resumindo: `install` = ferramentas, `skills install` = skills, `init` = desenvol
 
 ## Todos os comandos
 
-**Trabalho do dia a dia**
+Cada comando tem **duas formas**: no terminal, e de dentro do agente (Claude Code, Cursor, Codex) via MCP. As duas usam o mesmo motor — mesma detecção de stack, mesmas skills, mesma configuração.
 
-| Comando | O que faz | Executa agente? |
+No agente você **não digita o nome da ferramenta**: pede em português e ele escolhe. A coluna "no agente" mostra o que dizer e qual ferramenta é acionada.
+
+### Trabalho do dia a dia
+
+#### `melinna task` — implementar
+
+Detecta a stack, carrega as skills, monta o contexto e implementa no diretório atual. Valida com `npm test` se houver um script real.
+
+```bash
+melinna task "Adicionar validação de e-mail no cadastro"
+melinna task "Refatorar o módulo de autenticação" --agent codex
+melinna task "Ajuste pontual" --skill java-architect --economy lean
+melinna task "Migrar config" --yolo    # auto-aprova tudo, inclusive shell
+```
+
+No agente:
+
+```
+implementa validação de e-mail no cadastro
+```
+→ chama `melinna_task`. Dentro do agente ele **prepara** (skills + contexto) e devolve para o agente que já está rodando implementar — não dispara um segundo agente.
+
+#### `melinna ask` — entender
+
+Analisa o projeto e explica, em modo somente-leitura. Para entender antes de mexer.
+
+```bash
+melinna ask "como funciona a autenticação nesse projeto?"
+melinna ask "me explica a arquitetura" --deep    # dobra o mapa do repositório
+melinna ask "onde fica o tratamento de erro?" --economy lean
+```
+
+A resposta vem estruturada: resposta direta → como funciona (com `arquivo:linha`) → pontos de atenção.
+
+No agente:
+
+```
+como funciona a autenticação nesse projeto?
+me explica esse projeto
+por que essa classe existe?
+```
+→ chama `melinna_ask`.
+
+#### `melinna review` — revisar
+
+Revisa `git diff` (staged + unstaged) com as skills de revisão e arquitetura, mais as da stack. Somente leitura.
+
+```bash
+melinna review
+melinna review --agent agy --economy lean
+```
+
+No agente:
+
+```
+revisa minhas mudanças pendentes
+```
+→ chama `melinna_review`.
+
+#### `melinna quick-task` — só o prompt
+
+Igual ao `task`, mas **imprime** o prompt em vez de executar. Para colar em outro lugar ou inspecionar o que seria enviado.
+
+```bash
+melinna quick-task "Refatorar o módulo de autenticação"
+melinna quick-task "Ver o contexto puro" --no-skill
+melinna quick-task "..." --economy max | wc -c    # medir o tamanho
+```
+
+No agente não há equivalente direto — `melinna_task` já devolve o material montado, que é o mesmo conteúdo.
+
+#### `melinna explain-project` — contexto persistente
+
+Memória do projeto (`.melinna/memory/`) + snapshot comprimido do repositório.
+
+```bash
+melinna explain-project
+melinna explain-project > contexto.md
+```
+
+No agente:
+
+```
+me dá o contexto geral desse projeto
+```
+→ chama `melinna_explain_project`.
+
+### Skills
+
+#### `melinna skills install`
+
+```bash
+melinna skills install                    # autodetecta a stack e instala o que serve
+melinna skills install fluig advpl        # escolhe explicitamente
+melinna skills install --all              # tudo do catálogo
+melinna skills install fullstack --full   # clone completo, sem --depth 1
+```
+
+No agente:
+
+```
+instala as skills da melinna pra esse projeto
+instala as skills de fluig e advpl
+```
+→ chama `melinna_skills_install`.
+
+#### `melinna skills list`
+
+```bash
+melinna skills list             # tudo que está visível
+melinna skills list --detect    # e quais seriam escolhidas aqui
+```
+
+No agente:
+
+```
+que skills você usaria nesse projeto?
+```
+→ chama `melinna_skills_list`.
+
+#### `melinna skills registry` e `update`
+
+```bash
+melinna skills registry   # catálogo e o que já está instalado
+melinna skills update     # git pull em cada repositório instalado
+```
+
+No agente:
+
+```
+que skills a melinna tem disponíveis?
+atualiza as skills da melinna
+```
+→ chamam `melinna_skills_registry` e `melinna_skills_update`.
+
+#### Lendo uma skill inteira
+
+Só existe no agente — no terminal, o conteúdo já entra no prompt dos outros comandos.
+
+```
+me mostra a skill java-architect por completo
+```
+→ chama `melinna_get_skill`.
+
+### Configuração
+
+#### `melinna config economy` — quanto token gastar
+
+```bash
+melinna config economy         # escolhe na lista
+melinna config economy lean    # ou direto
+melinna config show            # o que está valendo e de onde veio
+```
+
+No agente:
+
+```
+muda a economia da melinna pra lean
+qual a configuração da melinna?
+```
+→ chama `melinna_config`.
+
+Detalhes e números medidos em [Economia de token](#economia-de-token).
+
+### Spec-Driven Development
+
+#### `melinna speckit`
+
+Chama a CLI real do spec-kit e gera a estrutura completa.
+
+```bash
+melinna speckit "checkout-com-pix"
+melinna speckit "checkout-com-pix" --integration claude
+```
+
+No agente:
+
+```
+inicializa spec-driven development pra feature checkout-com-pix
+```
+→ chama `melinna_speckit`.
+
+#### `melinna start-feature`
+
+Alternativa mais simples, sem depender do `specify`: gera `.speckit/` a partir dos templates locais. Interativo — pergunta nome, descrição e skills.
+
+```bash
+melinna start-feature
+```
+
+Sem equivalente MCP: o fluxo é interativo por natureza.
+
+### Projeto e ambiente
+
+#### `melinna init-project`
+
+Cria `.melinna/` no repositório (memória + skills do projeto) e mostra a stack detectada.
+
+```bash
+melinna init-project
+```
+
+No agente:
+
+```
+prepara a estrutura da melinna nesse projeto
+```
+→ chama `melinna_init_project`.
+
+#### `melinna doctor`
+
+```bash
+melinna doctor
+```
+
+No agente:
+
+```
+o ambiente da melinna está ok?
+```
+→ chama `melinna_doctor`.
+
+#### `melinna detect` (só no agente)
+
+A detecção de stack é usada por todos os comandos, mas dá para consultá-la isolada:
+
+```
+que stack é esse projeto?
+```
+→ chama `melinna_detect_stack`. No terminal, o equivalente é `melinna skills list --detect`.
+
+#### `melinna install` e `melinna upgrade`
+
+```bash
+melinna install          # baixa caveman-code e spec-kit (uma vez por máquina)
+melinna install --full   # clone completo dos repositórios de terceiros
+
+melinna upgrade          # atualiza tudo: Melinna, ferramentas e skills
+melinna upgrade --no-self --no-tools   # só as skills
+```
+
+Sem equivalente MCP para `install`/`upgrade`: são operações de ambiente, melhores no terminal onde você vê a saída do git e do npm.
+
+#### `melinna mcp` e `melinna sync`
+
+```bash
+melinna mcp --setup      # imprime a configuração de cada agente
+melinna mcp              # sobe o servidor (quem chama é o agente, não você)
+
+melinna sync                          # escreve as skills no formato de cada agente
+melinna sync --target claude cursor   # só alguns alvos
+melinna sync --all --global           # todas as skills, no HOME
+```
+
+Veja [Usando dentro do seu agente](#usando-dentro-do-seu-agente).
+
+#### `melinna init`
+
+Só em clone de desenvolvimento: roda `npm link` e depois o `doctor`.
+
+```bash
+melinna init
+```
+
+### Referência rápida
+
+| Terminal | Ferramenta MCP | O que faz |
 |---|---|---|
-| `melinna task <descrição>` | Implementa a tarefa no diretório atual e valida com os testes | Sim, com escrita |
-| `melinna review` | Revisa as mudanças pendentes (`git diff`) | Sim, somente leitura |
-| `melinna quick-task <descrição>` | Só **imprime** o prompt, para você colar onde quiser | Não |
-| `melinna explain-project` | Imprime um System Prompt com memória + snapshot do repositório | Não |
-
-**Spec-Driven Development**
-
-| Comando | O que faz |
-|---|---|
-| `melinna speckit <feature>` | Chama a CLI real do spec-kit e gera a estrutura completa |
-| `melinna start-feature` | Alternativa mais simples: gera `.speckit/` a partir dos templates locais |
-
-**Skills**
-
-| Comando | O que faz |
-|---|---|
-| `melinna skills install [nomes...]` | Baixa repositórios de skills (sem argumentos, autodetecta) |
-| `melinna skills list [--detect]` | Lista as skills disponíveis; `--detect` mostra quais seriam escolhidas aqui |
-| `melinna skills registry` | Mostra o catálogo e o que já está instalado |
-| `melinna skills update` | `git pull` em cada repositório de skills |
-
-**Dentro do agente**
-
-| Comando | O que faz |
-|---|---|
-| `melinna config economy [nivel]` | Escolhe quanto token gastar por tarefa |
-| `melinna config show` | Mostra a configuração em vigor |
-| `melinna mcp` | Sobe o servidor MCP (o agente chama, você não) |
-| `melinna mcp --setup` | Imprime a configuração para Claude, Cursor, Codex |
-| `melinna sync` | Escreve as skills no formato nativo de cada agente |
-
-**Ambiente**
-
-| Comando | O que faz |
-|---|---|
-| `melinna doctor` | Diagnóstico completo do ambiente |
-| `melinna install` | Baixa caveman-code e spec-kit |
-| `melinna upgrade` | Atualiza tudo: a Melinna, os clones de terceiros e as skills |
-| `melinna init-project` | Cria `.melinna/` no repositório atual |
-| `melinna init` | `npm link` num clone de desenvolvimento |
+| `melinna task <desc>` | `melinna_task` | Implementa |
+| `melinna ask <pergunta>` | `melinna_ask` | Analisa e explica |
+| `melinna review` | `melinna_review` | Revisa o diff pendente |
+| `melinna quick-task <desc>` | — | Imprime o prompt |
+| `melinna explain-project` | `melinna_explain_project` | Memória + snapshot |
+| `melinna skills install` | `melinna_skills_install` | Baixa skills |
+| `melinna skills list --detect` | `melinna_skills_list` | Lista e mostra a escolha |
+| `melinna skills registry` | `melinna_skills_registry` | Catálogo |
+| `melinna skills update` | `melinna_skills_update` | Atualiza skills |
+| — | `melinna_get_skill` | Lê uma skill inteira |
+| — | `melinna_detect_stack` | Só a detecção de stack |
+| `melinna config economy` | `melinna_config` | Perfil de economia |
+| `melinna speckit <feature>` | `melinna_speckit` | Spec-driven development |
+| `melinna init-project` | `melinna_init_project` | Cria `.melinna/` |
+| `melinna doctor` | `melinna_doctor` | Diagnóstico |
+| `melinna start-feature` | — | Fluxo interativo |
+| `melinna install` / `upgrade` | — | Ambiente |
+| `melinna sync` / `mcp` | — | Ligar no agente |
 
 Ajuda detalhada de qualquer comando:
 

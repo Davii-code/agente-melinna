@@ -9,6 +9,7 @@ import { explainProject } from "../lib/commands/explain-project.js";
 import { task } from "../lib/commands/task.js";
 import { speckit } from "../lib/commands/speckit.js";
 import { review } from "../lib/commands/review.js";
+import { ask } from "../lib/commands/ask.js";
 import { install } from "../lib/commands/install.js";
 import { upgrade } from "../lib/commands/upgrade.js";
 import { init } from "../lib/commands/init.js";
@@ -144,6 +145,25 @@ program
   .action(async (descricao, options) => {
     try {
       await task(ROOT, process.cwd(), descricao, options);
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("ask <pergunta>")
+  .description(
+    "Analisa o projeto e EXPLICA: detecta a stack, carrega as convenções da tecnologia, monta o " +
+      "mapa do repositório e responde a pergunta com o agente em modo somente-leitura. Para " +
+      "entender o código antes de mexer — 'como funciona X', 'me explica esse projeto'.",
+  )
+  .option("--deep", "dobra o mapa do repositório, para perguntas amplas sobre arquitetura")
+  .option("--agent <bin>", AGENT_OPT_DESC)
+  .option("--economy <nivel>", ECONOMY_OPT_DESC)
+  .action(async (pergunta, options) => {
+    try {
+      await ask(ROOT, process.cwd(), pergunta, { ...options, depth: options.deep ? "deep" : "normal" });
     } catch (err) {
       console.log(chalk.red(`Erro: ${err.message}`));
       process.exitCode = 1;
