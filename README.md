@@ -306,7 +306,7 @@ Resumindo: `install` = ferramentas, `skills install` = skills, `init` = desenvol
 |---|---|
 | `melinna doctor` | Diagnóstico completo do ambiente |
 | `melinna install` | Baixa caveman-code e spec-kit |
-| `melinna upgrade` | Atualiza os clones de terceiros e as dependências |
+| `melinna upgrade` | Atualiza tudo: a Melinna, os clones de terceiros e as skills |
 | `melinna init-project` | Cria `.melinna/` no repositório atual |
 | `melinna init` | `npm link` num clone de desenvolvimento |
 
@@ -599,10 +599,24 @@ npm test                  # não precisa de rede nem de agente instalado
 ### Atualizando
 
 ```bash
-melinna upgrade         # clones de terceiros + dependências
-melinna skills update   # repositórios de skills
-npm install -g git+https://github.com/Davii-code/agente-melinna.git   # a própria Melinna
+melinna upgrade
 ```
+
+Um comando só, que atualiza tudo:
+
+1. **A própria Melinna** — busca o commit mais recente do git. Numa instalação global roda o `npm install -g` por você; num clone de desenvolvimento faz `git pull` + `npm install`.
+2. **Os clones de terceiros** — `caveman-code` e `spec-kit`.
+3. **Os repositórios de skills** instalados.
+
+Você não precisa lembrar da URL do repositório nem rodar `npm install -g` na mão. Publicou uma mudança? Quem usa roda `melinna upgrade` e pega.
+
+```bash
+melinna upgrade --no-self     # só ferramentas e skills
+melinna upgrade --no-skills   # pula os repositórios de skills
+melinna upgrade --no-tools    # pula caveman-code/spec-kit
+```
+
+> Se você usa a Melinna via MCP, **reinicie o agente** depois do upgrade — o servidor é carregado na inicialização.
 
 ---
 

@@ -327,10 +327,16 @@ program
 
 program
   .command("upgrade")
-  .description("Atualiza os clones em tools/ (git pull) e as dependências npm da Melinna.")
-  .action(async () => {
+  .description(
+    "Atualiza tudo de uma vez: a própria Melinna (do git), os clones de terceiros e os " +
+      "repositórios de skills instalados. Dispensa lembrar do `npm install -g git+...`.",
+  )
+  .option("--no-self", "não atualiza a própria Melinna")
+  .option("--no-tools", "não atualiza caveman-code/spec-kit")
+  .option("--no-skills", "não atualiza os repositórios de skills")
+  .action(async (options) => {
     try {
-      await upgrade(ROOT);
+      await upgrade(ROOT, options);
     } catch (err) {
       console.log(chalk.red(`Erro: ${err.message}`));
       process.exitCode = 1;
