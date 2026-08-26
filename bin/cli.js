@@ -42,7 +42,10 @@ function printMcpSetup() {
 
   console.log(chalk.bold("\nClaude Code"));
   console.log(chalk.dim("  Um comando, sem editar arquivo:"));
-  console.log("    claude mcp add melinna -- melinna mcp");
+  console.log("    claude mcp add --scope user melinna -- melinna mcp");
+  console.log(
+    chalk.dim("  Sem `--scope user` o registro vale só na pasta atual, e some nos outros projetos."),
+  );
 
   console.log(chalk.bold("\nCursor"));
   console.log(chalk.dim("  .cursor/mcp.json (no projeto) ou ~/.cursor/mcp.json (global):"));
@@ -56,8 +59,13 @@ function printMcpSetup() {
   console.log(chalk.dim("  Aponte para o mesmo comando:"));
   console.log("    melinna mcp");
 
-  console.log(chalk.dim("\nDepois de configurar, reinicie o agente e peça algo como:"));
-  console.log(chalk.dim('  "usa a melinna para preparar: adicionar validação de e-mail no cadastro"'));
+  console.log(chalk.bold("\nDepois de configurar"));
+  console.log(chalk.dim("  Reinicie o agente — os servidores MCP são lidos na inicialização."));
+  console.log(chalk.dim("  Num projeto de stack nova, peça primeiro:"));
+  console.log('    "instala as skills da melinna pra esse projeto"');
+  console.log(chalk.dim("  Depois é só conversar normalmente:"));
+  console.log('    "implementa validação de e-mail no cadastro"');
+  console.log('    "revisa minhas mudanças pendentes"');
   console.log("");
 }
 
