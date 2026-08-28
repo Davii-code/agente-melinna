@@ -46,6 +46,8 @@ Os dois caminhos convivem. Veja [Usando dentro do seu agente](#usando-dentro-do-
   - [Monorepos](#monorepos-rode-na-raiz-uma-vez-só)
 - [Instalando skills](#instalando-skills)
 - [Escrevendo suas próprias skills](#escrevendo-suas-próprias-skills)
+- [Vault: segundo cérebro por projeto](#vault-segundo-cérebro-por-projeto)
+- [Diário de bordo](#diário-de-bordo)
 - [Economia de token](#economia-de-token)
 - [Memória do projeto](#memória-do-projeto)
 - [Agentes de IA](#agentes-de-ia)
@@ -166,6 +168,9 @@ Para Cursor (`.cursor/mcp.json`), Codex (`~/.codex/config.toml`) e os demais, `m
 | `melinna_skills_update` | `melinna skills update` |
 | `melinna_init_project` | `melinna init-project` |
 | `melinna_speckit` | `melinna speckit` |
+| `melinna_vault_save` | `melinna vault save` |
+| `melinna_vault_read` | `melinna vault show` |
+| `melinna_journal_add` | `melinna journal add` |
 | `melinna_config` | `melinna config` |
 | `melinna_doctor` | `melinna doctor` |
 
@@ -192,6 +197,9 @@ Depois disso, é só conversar:
 | "que stack é esse projeto?" | `melinna_detect_stack` |
 | "me dá o contexto geral do projeto" | `melinna_explain_project` |
 | "que skills você usaria aqui?" | `melinna_skills_list` |
+| "o que você já sabe sobre esse projeto?" | `melinna_vault_read` |
+| "salva o contexto no vault" | `melinna_vault_save` |
+| "anota no diário que terminei o checkout" | `melinna_journal_add` |
 | "muda a economia pra lean" | `melinna_config` |
 
 Se ele não chamar sozinho, force pelo nome:
@@ -560,6 +568,11 @@ melinna init
 | `melinna skills update` | `melinna_skills_update` | Atualiza skills |
 | — | `melinna_get_skill` | Lê uma skill inteira |
 | — | `melinna_detect_stack` | Só a detecção de stack |
+| `melinna vault save` | `melinna_vault_save` | Grava o contexto da sessão |
+| `melinna vault show` | `melinna_vault_read` | Lê o contexto salvo |
+| `melinna journal add <linha>` | `melinna_journal_add` | Uma linha no diário |
+| `melinna vault enable/disable/status` | — | Liga, desliga, diagnostica |
+| `melinna journal show [dia]` | — | Mostra o diário |
 | `melinna config economy` | `melinna_config` | Perfil de economia |
 | `melinna speckit <feature>` | `melinna_speckit` | Spec-driven development |
 | `melinna init-project` | `melinna_init_project` | Cria `.melinna/` |
@@ -742,6 +755,160 @@ As raízes são procuradas nesta ordem, e a primeira que tiver o id ganha:
 | 4 | `~/.melinna/skills/` | Repositórios instalados pelo registry |
 
 O projeto vem primeiro para que um repositório possa sobrescrever uma skill genérica pela sua própria versão sem renomear nada.
+
+---
+
+## Vault: segundo cérebro por projeto
+
+O código o agente relê sozinho na próxima sessão. **A intenção, não.** Por que a arquitetura é assim, que regra foi combinada, o que já foi tentado e descartado — isso se perde quando o chat fecha.
+
+O vault guarda exatamente isso, em notas Obsidian ligadas entre si.
+
+```bash
+melinna vault enable ~/Obsidian/SegundoCerebro
+```
+
+Fica ligado até você desligar — independente de abrir ou fechar chat.
+
+### Como funciona
+
+Ao fim de uma sessão que **mexeu em arquivos**, o hook `Stop` do Claude Code pede ao agente que grave o que aprendeu. O agente escreve; a Melinna organiza e liga as notas.
+
+```
+fim da sessão
+  → hook Stop dispara
+  → "antes de encerrar, grave o contexto no vault"
+  → agente chama melinna_vault_save({ resumo, arquitetura, decisoes, regras, atencao })
+  → projetos/meu-projeto.md atualizado
+  → diario/2026-08-28.md ganha uma linha
+```
+
+Na conversa seguinte, o agente chama `melinna_vault_read` e já começa sabendo.
+
+### Estrutura
+
+```
+~/Obsidian/SegundoCerebro/
+├── projetos/
+│   └── meu-projeto.md      nota viva, atualizada a cada sessão
+└── diario/
+    └── 2026-08-28.md       uma linha por sessão
+```
+
+A nota do projeto:
+
+```markdown
+---
+projeto: meu-projeto
+caminho: C:/dev/meu-projeto
+stack: [java, spring]
+atualizado: 2026-08-28
+tags: [melinna/projeto]
+---
+
+# meu-projeto
+
+## Arquitetura
+Monolito Spring com módulos por domínio.
+
+## Decisões
+- Postgres em vez de Mongo — relatórios exigem join
+- Sem ORM no módulo de faturamento — queries críticas escritas à mão
+
+## Convenções e regras
+- Nada de lógica de negócio em controller
+
+## Pontos de atenção
+- O cache de sessão não invalida em deploy
+
+## Histórico
+- [[2026-08-27]] — migrou o módulo de auth para JWT
+- [[2026-08-28]] — corrigiu o vazamento no pool de conexão
+```
+
+**Prosa é substituída, listas acumulam.** `Arquitetura` e `Pontos de atenção` descrevem o estado atual — manter versões antigas empilhadas só poluiria. `Decisões` e `Regras` acumulam sem duplicar: uma decisão de março continua valendo em agosto.
+
+Os `[[wikilinks]]` funcionam nos dois sentidos — do diário você chega ao projeto, do histórico volta ao dia. É o que faz o grafo do Obsidian valer a pena.
+
+### Comandos
+
+```bash
+melinna vault enable [pasta]   # liga e instala o hook (pergunta antes de alterar as settings)
+melinna vault status           # ligado? hook instalado? qual o projeto atual?
+melinna vault show             # imprime o contexto salvo deste projeto
+melinna vault disable          # desliga e remove o hook; as notas permanecem
+
+melinna vault enable ~/vault --no-hook        # sem captura automática
+melinna vault enable ~/vault --cooldown 30    # intervalo mínimo entre gravações
+melinna vault hook install                    # instala/remove só o hook
+```
+
+Gravação manual, sem esperar o hook:
+
+```bash
+melinna vault save "migrou o auth para JWT" \
+  --arquitetura "Monolito Spring com módulos por domínio." \
+  --decisao "Postgres em vez de Mongo — relatórios exigem join" \
+  --regra "Nada de lógica de negócio em controller"
+```
+
+No agente:
+
+```
+salva o contexto desse projeto no vault
+o que você já sabe sobre esse projeto?
+```
+→ `melinna_vault_save` e `melinna_vault_read`.
+
+### Sobre o hook
+
+O evento `Stop` do Claude Code dispara **a cada resposta do agente**, não só quando o chat fecha. Sem controle, uma conversa de vinte turnos pediria vinte gravações. Por isso o hook só age quando:
+
+1. o vault está ligado;
+2. a sessão usou ferramenta de escrita (uma conversa que só leu não muda o entendimento);
+3. passou o intervalo mínimo desde a última gravação na mesma sessão (padrão: 15 min);
+4. não é a própria injeção do hook voltando (`stop_hook_active`).
+
+A instalação altera `~/.claude/settings.json`. A Melinna **pergunta antes**, faz backup em `settings.json.melinna-backup`, e marca a entrada com `--melinna-vault` para que `vault disable` remova só o que é dela — hooks seus ficam intactos.
+
+Se o hook falhar por qualquer motivo, ele deixa a sessão seguir. Um hook quebrado não pode travar seu trabalho.
+
+> **Só no Claude Code por enquanto.** O hook depende do sistema de hooks dele. Em Cursor e Codex, o vault funciona — mas a gravação acontece quando você pede, não automaticamente.
+
+---
+
+## Diário de bordo
+
+Uma linha por sessão, para responder *"o que eu fiz na terça?"* de relance. Usa a mesma pasta do vault.
+
+```bash
+melinna journal add "corrigiu o spawn do npm no Windows"
+melinna journal show              # hoje
+melinna journal show 2026-08-27   # outro dia
+```
+
+```markdown
+---
+data: 2026-08-28
+tags: [melinna/diario]
+---
+
+# 2026-08-28
+
+- [[agente-melinna]] — corrigiu o spawn do npm no Windows
+- [[loja-online]] — migrou o checkout para Pix
+```
+
+Cada linha liga ao projeto. A frase é **normalizada para uma linha só** — quebras viram espaço, porque o diário é para bater o olho, não para guardar detalhe. O detalhe mora na nota do projeto.
+
+O `melinna vault save` já escreve no diário automaticamente: o `resumo` que você passa vai para os dois lugares.
+
+No agente:
+
+```
+anota no diário que terminei o refactor do checkout
+```
+→ `melinna_journal_add`.
 
 ---
 

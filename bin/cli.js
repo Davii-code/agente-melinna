@@ -18,6 +18,16 @@ import { doctor } from "../lib/commands/doctor.js";
 import { skillsInstall, skillsUpdate, skillsList, skillsRegistry } from "../lib/commands/skills.js";
 import { sync } from "../lib/commands/sync.js";
 import { configEconomy, configShow } from "../lib/commands/config.js";
+import {
+  vaultEnable,
+  vaultDisable,
+  vaultStatus,
+  vaultHook,
+  vaultShow,
+  vaultSave,
+  journalAdd,
+  journalShow,
+} from "../lib/commands/vault.js";
 import { PROFILES } from "../lib/config.js";
 import { AGENT_PRIORITY } from "../lib/agents.js";
 
@@ -272,6 +282,124 @@ skills
   .action(async () => {
     try {
       await skillsUpdate();
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+const vault = program
+  .command("vault")
+  .description(
+    "Segundo cérebro por projeto, em formato Obsidian. Fica ligado até você desligar: ao fim de " +
+      "cada sessão com trabalho de verdade, o agente grava arquitetura, decisões e regras numa " +
+      "nota do projeto, e uma linha no diário do dia.",
+  );
+
+vault
+  .command("enable [pasta]")
+  .description("Liga o vault numa pasta e instala o hook de captura automática no Claude Code.")
+  .option("--no-hook", "não instala o hook — grava só quando você pedir")
+  .option("--cooldown <minutos>", "intervalo mínimo entre gravações na mesma sessão (padrão: 15)", Number)
+  .option("-y, --yes", "não pergunta antes de alterar as settings do Claude Code")
+  .action(async (pasta, options) => {
+    try {
+      await vaultEnable(pasta, options);
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+vault
+  .command("disable")
+  .description("Desliga o vault e remove o hook. As notas já escritas permanecem.")
+  .option("-y, --yes", "não pergunta antes de remover o hook")
+  .action(async (options) => {
+    try {
+      await vaultDisable(options);
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+vault
+  .command("status")
+  .description("Mostra se o vault está ligado, onde fica, se o hook está instalado e o projeto atual.")
+  .action(() => {
+    try {
+      vaultStatus(process.cwd());
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+vault
+  .command("show")
+  .description("Imprime o contexto que o vault guarda sobre o projeto atual.")
+  .action(() => {
+    try {
+      vaultShow(process.cwd());
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+vault
+  .command("save [resumo]")
+  .description("Grava manualmente no vault, sem esperar o hook. O caminho normal é o agente gravar.")
+  .option("--arquitetura <texto>", "substitui a seção de arquitetura")
+  .option("--decisao <texto...>", "acrescenta decisões")
+  .option("--regra <texto...>", "acrescenta regras")
+  .option("--atencao <texto>", "substitui os pontos de atenção")
+  .action((resumo, options) => {
+    try {
+      vaultSave(process.cwd(), resumo, options);
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+vault
+  .command("hook <acao>")
+  .description("Instala ou remove só o hook do Claude Code (`install` ou `remove`).")
+  .action((acao) => {
+    try {
+      vaultHook(acao);
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+const journal = program
+  .command("journal")
+  .description("Diário de bordo: uma linha por dia sobre o que foi feito, ligada ao projeto.");
+
+journal
+  .command("add <linha>")
+  .description("Acrescenta uma linha ao diário de hoje.")
+  .option("--dia <AAAA-MM-DD>", "registra em outro dia")
+  .option("--no-project", "não liga a linha a nenhum projeto")
+  .action((linha, options) => {
+    try {
+      journalAdd(process.cwd(), linha, { ...options, day: options.dia });
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+journal
+  .command("show [dia]")
+  .description("Mostra o diário de um dia (padrão: hoje).")
+  .action((dia) => {
+    try {
+      journalShow(dia);
     } catch (err) {
       console.log(chalk.red(`Erro: ${err.message}`));
       process.exitCode = 1;
