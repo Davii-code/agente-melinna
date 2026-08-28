@@ -28,6 +28,7 @@ import {
   journalAdd,
   journalShow,
 } from "../lib/commands/vault.js";
+import { slashInstall, slashRemove, slashList } from "../lib/commands/slash.js";
 import { PROFILES } from "../lib/config.js";
 import { AGENT_PRIORITY } from "../lib/agents.js";
 
@@ -370,6 +371,53 @@ vault
   .action((acao) => {
     try {
       vaultHook(acao);
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+const slash = program
+  .command("slash")
+  .description(
+    "Slash commands da Melinna no Claude Code: /melinna-salvar, /melinna-diario e /melinna-contexto. " +
+      "Você decide a hora de gravar, sem depender do hook.",
+  );
+
+slash
+  .command("install")
+  .description("Cria os slash commands em ~/.claude/commands (ou no projeto, com --project).")
+  .option("--project", "instala em .claude/commands do repositório atual, em vez do HOME")
+  .option("--force", "sobrescreve arquivos de mesmo nome que não foram criados pela Melinna")
+  .action((options) => {
+    try {
+      slashInstall(process.cwd(), options);
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+slash
+  .command("remove")
+  .description("Remove os slash commands que a Melinna instalou.")
+  .option("--project", "remove do repositório atual, em vez do HOME")
+  .action((options) => {
+    try {
+      slashRemove(process.cwd(), options);
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+slash
+  .command("list")
+  .description("Mostra os slash commands e quais estão instalados.")
+  .option("--project", "consulta o repositório atual, em vez do HOME")
+  .action((options) => {
+    try {
+      slashList(process.cwd(), options);
     } catch (err) {
       console.log(chalk.red(`Erro: ${err.message}`));
       process.exitCode = 1;

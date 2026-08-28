@@ -573,6 +573,7 @@ melinna init
 | `melinna journal add <linha>` | `melinna_journal_add` | Uma linha no diário |
 | `melinna vault enable/disable/status` | — | Liga, desliga, diagnostica |
 | `melinna journal show [dia]` | — | Mostra o diário |
+| `melinna slash install/list/remove` | — | Slash commands no Claude Code |
 | `melinna config economy` | `melinna_config` | Perfil de economia |
 | `melinna speckit <feature>` | `melinna_speckit` | Spec-driven development |
 | `melinna init-project` | `melinna_init_project` | Cria `.melinna/` |
@@ -770,20 +771,34 @@ melinna vault enable ~/Obsidian/SegundoCerebro
 
 Fica ligado até você desligar — independente de abrir ou fechar chat.
 
-### Como funciona
+### Como gravar
 
-Ao fim de uma sessão que **mexeu em arquivos**, o hook `Stop` do Claude Code pede ao agente que grave o que aprendeu. O agente escreve; a Melinna organiza e liga as notas.
+Duas formas. **A recomendada é o slash command** — você decide a hora.
 
-```
-fim da sessão
-  → hook Stop dispara
-  → "antes de encerrar, grave o contexto no vault"
-  → agente chama melinna_vault_save({ resumo, arquitetura, decisoes, regras, atencao })
-  → projetos/meu-projeto.md atualizado
-  → diario/2026-08-28.md ganha uma linha
+```bash
+melinna slash install
 ```
 
-Na conversa seguinte, o agente chama `melinna_vault_read` e já começa sabendo.
+Reinicie o Claude Code e digite `/`:
+
+| Comando | O que faz |
+|---|---|
+| `/melinna-salvar` | Grava a nota do projeto **e** a linha do diário |
+| `/melinna-diario` | Só a linha do diário |
+| `/melinna-contexto` | Carrega o que sessões anteriores registraram |
+
+Uma chamada escreve os dois: o `resumo` alimenta a nota do projeto e o diário do dia.
+
+```
+você:    /melinna-salvar
+agente:  [chama melinna_vault_save]
+         ✔ projetos/meu-projeto.md atualizado
+         ✔ diario/2026-08-28.md — "migrou o auth para JWT"
+```
+
+A outra forma é o **hook automático**, que dispara sozinho. Leia [Sobre o hook](#sobre-o-hook) antes de contar com ele: o evento disponível não é "chat fechado", e isso tem consequência.
+
+Na conversa seguinte, `/melinna-contexto` (ou o próprio agente chamando `melinna_vault_read`) carrega tudo de volta.
 
 ### Estrutura
 
@@ -833,6 +848,10 @@ Os `[[wikilinks]]` funcionam nos dois sentidos — do diário você chega ao pro
 ### Comandos
 
 ```bash
+melinna slash install          # cria /melinna-salvar, /melinna-diario, /melinna-contexto
+melinna slash list             # o que está instalado
+melinna slash remove           # remove só o que a Melinna criou
+
 melinna vault enable [pasta]   # liga e instala o hook (pergunta antes de alterar as settings)
 melinna vault status           # ligado? hook instalado? qual o projeto atual?
 melinna vault show             # imprime o contexto salvo deste projeto
@@ -862,7 +881,23 @@ o que você já sabe sobre esse projeto?
 
 ### Sobre o hook
 
-O evento `Stop` do Claude Code dispara **a cada resposta do agente**, não só quando o chat fecha. Sem controle, uma conversa de vinte turnos pediria vinte gravações. Por isso o hook só age quando:
+O hook é opcional e resolve o caso de você esquecer de rodar `/melinna-salvar`. Vale entender o que ele consegue e o que não consegue.
+
+**Não existe evento de "chat fechado" que consiga falar com o modelo.** O Claude Code tem `SessionEnd`, mas quando ele dispara o modelo já saiu — dá para rodar um comando, não para pedir um resumo. Só o `Stop` devolve o controle ao agente, e ele dispara **a cada resposta**, não no fim da conversa.
+
+Consequência prática, numa sessão de 40 minutos:
+
+```
+min 5    você edita, agente responde  → hook dispara, grava        ✔
+min 8    outra resposta               → cooldown, não grava
+min 22   mais trabalho                → hook dispara, regrava      ✔
+min 38   últimos ajustes              → cooldown, não grava
+você fecha                            → os últimos 16 min ficaram de fora
+```
+
+Ou seja: **o hook grava várias vezes ao longo da sessão e mantém a nota atualizada, mas a cauda pode escapar.** Por isso o `/melinna-salvar` é o caminho principal — ele grava na hora, sem cooldown, pegando tudo até ali.
+
+Sem controle, uma conversa de vinte turnos pediria vinte gravações. Por isso o hook só age quando:
 
 1. o vault está ligado;
 2. a sessão usou ferramenta de escrita (uma conversa que só leu não muda o entendimento);
@@ -880,6 +915,14 @@ Se o hook falhar por qualquer motivo, ele deixa a sessão seguir. Um hook quebra
 ## Diário de bordo
 
 Uma linha por sessão, para responder *"o que eu fiz na terça?"* de relance. Usa a mesma pasta do vault.
+
+Dentro do Claude Code:
+
+```
+/melinna-diario terminei o refactor do checkout
+```
+
+No terminal:
 
 ```bash
 melinna journal add "corrigiu o spawn do npm no Windows"
