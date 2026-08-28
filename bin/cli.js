@@ -15,7 +15,15 @@ import { upgrade } from "../lib/commands/upgrade.js";
 import { init } from "../lib/commands/init.js";
 import { initProject } from "../lib/commands/init-project.js";
 import { doctor } from "../lib/commands/doctor.js";
-import { skillsInstall, skillsUpdate, skillsList, skillsRegistry } from "../lib/commands/skills.js";
+import {
+  skillsInstall,
+  skillsUpdate,
+  skillsList,
+  skillsRegistry,
+  skillsAdd,
+  skillsRemove,
+  skillsPin,
+} from "../lib/commands/skills.js";
 import { sync } from "../lib/commands/sync.js";
 import { configEconomy, configShow } from "../lib/commands/config.js";
 import {
@@ -266,6 +274,48 @@ skills
   });
 
 skills
+  .command("add <nome> <url>")
+  .description("Registra um repositório de skills seu, fora do catálogo embutido.")
+  .option("--tag <tags...>", "tags de stack que ele cobre (padrão: custom)")
+  .option("--description <texto>", "descrição curta")
+  .option("--pin <commit>", "fixa num commit, para `skills update` não movê-lo")
+  .action((nome, url, options) => {
+    try {
+      skillsAdd(nome, url, options);
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+skills
+  .command("remove <nome>")
+  .description("Remove um repositório que você adicionou. O catálogo embutido não é afetado.")
+  .action((nome) => {
+    try {
+      skillsRemove(nome);
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+skills
+  .command("pin <nome> [commit]")
+  .description(
+    "Fixa um repositório num commit, para que `skills update` não traga conteúdo não revisado. " +
+      "Sem o commit, usa o que está instalado.",
+  )
+  .action(async (nome, commit) => {
+    try {
+      await skillsPin(nome, commit);
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+skills
   .command("registry")
   .description("Mostra o catálogo de repositórios de skills e o que já está instalado.")
   .action(() => {
@@ -364,6 +414,34 @@ vault
       process.exitCode = 1;
     }
   });
+
+// Executores de hook: invocados pelo Claude Code, não pelo usuário.
+//
+// A stdout aqui é o canal do protocolo de hooks — só JSON pode sair por ela.
+// Qualquer falha vira `{}` (deixa a sessão seguir) e sai com código 0: um hook
+// quebrado não pode travar o trabalho de quem está usando o agente.
+for (const { sub, run } of [
+  { sub: "hook-run", run: async (m, input) => m.runStopHook(input) },
+  { sub: "hook-start", run: async (m, input) => m.runSessionStartHook(input) },
+]) {
+  vault
+    // `[marca...]` engole o `--melinna-vault` do comando instalado: ele existe
+    // só para identificar a entrada no settings, e o executor o ignora.
+    .command(`${sub} [marca...]`, { hidden: true })
+    .description("Executor de hook do Claude Code — chamado pelo agente, não por você.")
+    .allowUnknownOption()
+    .action(async () => {
+      let output = "{}";
+      try {
+        const runner = await import("../lib/hooks/runner.js");
+        output = JSON.stringify((await run(runner, runner.readHookInput())) ?? {});
+      } catch {
+        output = "{}";
+      }
+      process.stdout.write(output);
+      process.exit(0);
+    });
+}
 
 vault
   .command("hook <acao>")

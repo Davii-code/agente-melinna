@@ -17,7 +17,13 @@ import {
   today,
   writeProjectNote,
 } from "../lib/vault.js";
-import { installHook, uninstallHook, isHookInstalled, hookCommand } from "../lib/hook-install.js";
+import {
+  installHook,
+  uninstallHook,
+  isHookInstalled,
+  hookCommand,
+  HOOK_EVENTS,
+} from "../lib/hook-install.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const HOOK = join(ROOT, "lib", "hooks", "stop.mjs");
@@ -184,7 +190,24 @@ test("today devolve AAAA-MM-DD", () => {
 // ── Hook ───────────────────────────────────────────────────────────────────
 
 test("hookCommand carrega a marca que permite desinstalar", () => {
-  assert.match(hookCommand(), /--melinna-vault/, "sem a marca não dá para remover só o nosso hook");
+  assert.match(hookCommand("hook-run"), /--melinna-vault/, "sem a marca não dá para remover só o nosso hook");
+});
+
+test("hookCommand invoca a CLI pelo PATH, não o caminho do pacote", () => {
+  // Regressão: gravar o caminho absoluto do script quebrava em silêncio quando
+  // o pacote mudava de lugar — ao trocar clone de dev por instalação global.
+  const command = hookCommand("hook-run");
+  assert.match(command, /^melinna vault hook-run/, `esperava invocação pelo PATH, veio: ${command}`);
+  assert.ok(!/[/\\]/.test(command.split(" ")[0]), "o binário não pode vir com caminho embutido");
+  assert.ok(!command.includes(".mjs"), "não deveria referenciar o script diretamente");
+});
+
+test("instala o par Stop + SessionStart", () => {
+  // Capturar sem carregar é metade do trabalho: sem SessionStart, o vault
+  // acumula conhecimento que ninguém lê.
+  const events = HOOK_EVENTS.map((e) => e.event);
+  assert.ok(events.includes("Stop"), "faltou o hook de captura");
+  assert.ok(events.includes("SessionStart"), "faltou o hook de carga");
 });
 
 test("installHook preserva as settings e os hooks do usuário", (t) => {
@@ -220,7 +243,7 @@ test("uninstallHook remove só o hook da Melinna", (t) => {
 
   installHook(path);
   const { removed } = uninstallHook(path);
-  assert.equal(removed, 1);
+  assert.equal(removed, HOOK_EVENTS.length, "deveria remover uma entrada por evento instalado");
   assert.equal(isHookInstalled(path), false);
   assert.ok(
     JSON.stringify(JSON.parse(readFileSync(path, "utf-8"))).includes("hook-do-usuario"),

@@ -242,6 +242,9 @@ Sincronizando 12 skill(s): java-architect, spring-boot, code-review, ...
 | `claude` | `.claude/skills/<id>/SKILL.md` (ou `~/.claude/skills/` com `--global`) |
 | `cursor` | `.cursor/rules/<id>.mdc` |
 | `agents` | Bloco gerenciado dentro de `AGENTS.md` — lido por Codex, Antigravity e Cursor |
+| `claude-md` | Bloco em `CLAUDE.md` com `@AGENTS.md` |
+
+> **Por que o `claude-md`:** `AGENTS.md` virou padrão cross-tool e é lido por dezenas de agentes, mas o Claude Code carrega `CLAUDE.md`. Escrever só no `AGENTS.md` deixava justamente ele de fora. A ponte é um import de uma linha, então as instruções não ficam duplicadas em dois arquivos.
 
 ```bash
 melinna sync --target claude cursor   # só alguns alvos
@@ -423,6 +426,37 @@ que skills a melinna tem disponíveis?
 atualiza as skills da melinna
 ```
 → chamam `melinna_skills_registry` e `melinna_skills_update`.
+
+#### `melinna skills add` — seus próprios repositórios
+
+O catálogo embutido é fixo no código. Para usar um repositório fora dele:
+
+```bash
+melinna skills add meu-repo https://github.com/acme/skills --tag java
+melinna skills install meu-repo
+melinna skills remove meu-repo   # tira do catálogo; o clone fica no disco
+```
+
+Ficam em `~/.melinna/config.json` e valem como qualquer outra entrada.
+
+#### `melinna skills pin` — fixar uma versão
+
+Skills viram **instrução para o agente**, às vezes com permissão de escrita. Um `skills update` traz o que o autor publicou desde ontem, sem ninguém revisar. Fixar o commit torna a atualização uma decisão explícita:
+
+```bash
+melinna skills pin meu-repo              # fixa no commit instalado agora
+melinna skills pin meu-repo abc123def    # ou num commit específico
+```
+
+Repositório fixado é pulado pelo update:
+
+```
+⊙ meu-repo fixado em abc123de — não atualizado
+```
+
+Só entradas suas guardam pin. Para fixar um do catálogo embutido, registre uma cópia sua apontando para a mesma URL — o `skills pin` imprime o comando pronto.
+
+> Instale só repositórios de quem você confia: o conteúdo deles entra no prompt do agente.
 
 #### Lendo uma skill inteira
 
@@ -804,11 +838,14 @@ Na conversa seguinte, `/melinna-contexto` (ou o próprio agente chamando `melinn
 
 ```
 ~/Obsidian/SegundoCerebro/
+├── projetos.md             índice: lista e linka todos os projetos
 ├── projetos/
 │   └── meu-projeto.md      nota viva, atualizada a cada sessão
 └── diario/
     └── 2026-08-28.md       uma linha por sessão
 ```
+
+O `projetos.md` é regenerado a cada gravação. Sem ele, `projetos/` vira uma pilha plana e o agente precisa varrer o diretório para descobrir o que existe — o modo de falha mais comum de vaults de segundo cérebro.
 
 A nota do projeto:
 
@@ -879,9 +916,20 @@ o que você já sabe sobre esse projeto?
 ```
 → `melinna_vault_save` e `melinna_vault_read`.
 
-### Sobre o hook
+### Sobre os hooks
 
-O hook é opcional e resolve o caso de você esquecer de rodar `/melinna-salvar`. Vale entender o que ele consegue e o que não consegue.
+São dois, um par:
+
+| Evento | O que faz |
+|---|---|
+| `SessionStart` | Injeta o contexto salvo no **início** da conversa |
+| `Stop` | Pede a gravação ao **fim** de uma sessão com trabalho |
+
+Sem o `SessionStart`, o vault acumularia conhecimento que ninguém lê — capturar sem carregar é metade do trabalho. Ele carrega sozinho, sem depender de o agente lembrar de chamar `melinna_vault_read` nem de você digitar `/melinna-contexto`.
+
+A nota é truncada em ~6.000 caracteres antes de entrar no contexto: ela cresce a cada sessão e isso entraria em **toda** conversa. Para desligar só o carregamento automático, mantendo a gravação, ponha `"autoLoad": false` no bloco `vault` de `~/.melinna/config.json`.
+
+O `Stop` é opcional e resolve o caso de você esquecer de rodar `/melinna-salvar`. Vale entender o que ele consegue e o que não consegue.
 
 **Não existe evento de "chat fechado" que consiga falar com o modelo.** O Claude Code tem `SessionEnd`, mas quando ele dispara o modelo já saiu — dá para rodar um comando, não para pedir um resumo. Só o `Stop` devolve o controle ao agente, e ele dispara **a cada resposta**, não no fim da conversa.
 
@@ -905,6 +953,8 @@ Sem controle, uma conversa de vinte turnos pediria vinte gravações. Por isso o
 4. não é a própria injeção do hook voltando (`stop_hook_active`).
 
 A instalação altera `~/.claude/settings.json`. A Melinna **pergunta antes**, faz backup em `settings.json.melinna-backup`, e marca a entrada com `--melinna-vault` para que `vault disable` remova só o que é dela — hooks seus ficam intactos.
+
+O comando gravado é `melinna vault hook-run`, resolvido pelo **PATH**. Versões anteriores gravavam o caminho absoluto do script, que quebrava em silêncio quando o pacote mudava de lugar. `melinna upgrade` avisa se seus hooks estão nesse formato antigo; `melinna vault hook install` migra.
 
 Se o hook falhar por qualquer motivo, ele deixa a sessão seguir. Um hook quebrado não pode travar seu trabalho.
 
