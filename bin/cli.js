@@ -33,6 +33,7 @@ import {
   vaultHook,
   vaultShow,
   vaultSave,
+  vaultAutoSave,
   journalAdd,
   journalShow,
 } from "../lib/commands/vault.js";
@@ -349,9 +350,13 @@ const vault = program
 
 vault
   .command("enable [pasta]")
-  .description("Liga o vault numa pasta e instala o hook de captura automática no Claude Code.")
-  .option("--no-hook", "não instala o hook — grava só quando você pedir")
-  .option("--cooldown <minutos>", "intervalo mínimo entre gravações na mesma sessão (padrão: 15)", Number)
+  .description(
+    "Liga o vault numa pasta. A gravação é sob demanda (`/melinna-salvar`); o hook instalado só " +
+      "carrega o contexto no início da conversa, sem interromper nada.",
+  )
+  .option("--no-hook", "não instala hook nenhum — nem a carga automática do contexto")
+  .option("--auto-save", "também pede a gravação ao fim das sessões (interrompe a conversa)")
+  .option("--cooldown <minutos>", "com --auto-save, intervalo mínimo entre pedidos (padrão: 15)", Number)
   .option("-y, --yes", "não pergunta antes de alterar as settings do Claude Code")
   .action(async (pasta, options) => {
     try {
@@ -444,11 +449,27 @@ for (const { sub, run } of [
 }
 
 vault
-  .command("hook <acao>")
-  .description("Instala ou remove só o hook do Claude Code (`install` ou `remove`).")
-  .action((acao) => {
+  .command("auto-save <estado>")
+  .description(
+    "Liga ou desliga a gravação automática ao fim das sessões (`on` ou `off`). " +
+      "Desligada, o vault grava só com `/melinna-salvar`.",
+  )
+  .action((estado) => {
     try {
-      vaultHook(acao);
+      vaultAutoSave(estado);
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+vault
+  .command("hook <acao>")
+  .description("Instala ou remove os hooks do Claude Code (`install` ou `remove`).")
+  .option("--auto-save", "inclui o hook de gravação automática")
+  .action((acao, options) => {
+    try {
+      vaultHook(acao, options);
     } catch (err) {
       console.log(chalk.red(`Erro: ${err.message}`));
       process.exitCode = 1;

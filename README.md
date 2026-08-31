@@ -807,7 +807,7 @@ Fica ligado até você desligar — independente de abrir ou fechar chat.
 
 ### Como gravar
 
-Duas formas. **A recomendada é o slash command** — você decide a hora.
+**Sob demanda, com o slash command.** Você decide a hora.
 
 ```bash
 melinna slash install
@@ -830,9 +830,9 @@ agente:  [chama melinna_vault_save]
          ✔ diario/2026-08-28.md — "migrou o auth para JWT"
 ```
 
-A outra forma é o **hook automático**, que dispara sozinho. Leia [Sobre o hook](#sobre-o-hook) antes de contar com ele: o evento disponível não é "chat fechado", e isso tem consequência.
+Na conversa seguinte o contexto volta sozinho — o hook `SessionStart` injeta antes da sua primeira mensagem. `/melinna-contexto` força a recarga quando você quiser.
 
-Na conversa seguinte, `/melinna-contexto` (ou o próprio agente chamando `melinna_vault_read`) carrega tudo de volta.
+Existe também gravação automática, **desligada por padrão**. Leia [Sobre os hooks](#sobre-os-hooks) antes de ligá-la: o evento disponível não é "chat fechado", e isso tem consequência.
 
 ### Estrutura
 
@@ -889,14 +889,17 @@ melinna slash install          # cria /melinna-salvar, /melinna-diario, /melinna
 melinna slash list             # o que está instalado
 melinna slash remove           # remove só o que a Melinna criou
 
-melinna vault enable [pasta]   # liga e instala o hook (pergunta antes de alterar as settings)
-melinna vault status           # ligado? hook instalado? qual o projeto atual?
+melinna vault enable [pasta]   # liga e instala o hook de carga (pergunta antes)
+melinna vault status           # ligado? gravação automática? hooks? projeto atual?
 melinna vault show             # imprime o contexto salvo deste projeto
-melinna vault disable          # desliga e remove o hook; as notas permanecem
+melinna vault disable          # desliga e remove os hooks; as notas permanecem
 
-melinna vault enable ~/vault --no-hook        # sem captura automática
-melinna vault enable ~/vault --cooldown 30    # intervalo mínimo entre gravações
-melinna vault hook install                    # instala/remove só o hook
+melinna vault auto-save on     # liga a gravação automática ao fim das sessões
+melinna vault auto-save off    # desliga (padrão)
+
+melinna vault enable ~/vault --no-hook        # sem hook nenhum, nem a carga
+melinna vault enable ~/vault --auto-save      # já com gravação automática
+melinna vault hook install                    # instala/atualiza os hooks
 ```
 
 Gravação manual, sem esperar o hook:
@@ -918,18 +921,29 @@ o que você já sabe sobre esse projeto?
 
 ### Sobre os hooks
 
-São dois, um par:
+São dois, com papéis opostos — e só um vem ligado:
 
-| Evento | O que faz |
-|---|---|
-| `SessionStart` | Injeta o contexto salvo no **início** da conversa |
-| `Stop` | Pede a gravação ao **fim** de uma sessão com trabalho |
+| Evento | O que faz | Padrão |
+|---|---|---|
+| `SessionStart` | Injeta o contexto salvo no **início** da conversa | **ligado** |
+| `Stop` | Pede a gravação ao **fim** de cada resposta do agente | desligado |
 
-Sem o `SessionStart`, o vault acumularia conhecimento que ninguém lê — capturar sem carregar é metade do trabalho. Ele carrega sozinho, sem depender de o agente lembrar de chamar `melinna_vault_read` nem de você digitar `/melinna-contexto`.
+O `SessionStart` é passivo: você não percebe, só ganha um agente que já sabe do projeto. Sem ele o vault acumularia conhecimento que ninguém lê — capturar sem carregar é metade do trabalho, e depender de o agente lembrar de chamar `melinna_vault_read` não funciona.
 
-A nota é truncada em ~6.000 caracteres antes de entrar no contexto: ela cresce a cada sessão e isso entraria em **toda** conversa. Para desligar só o carregamento automático, mantendo a gravação, ponha `"autoLoad": false` no bloco `vault` de `~/.melinna/config.json`.
+A nota é truncada em ~6.000 caracteres antes de entrar no contexto: ela cresce a cada sessão e isso entraria em **toda** conversa. Para desligar só o carregamento, ponha `"autoLoad": false` no bloco `vault` de `~/.melinna/config.json`.
 
-O `Stop` é opcional e resolve o caso de você esquecer de rodar `/melinna-salvar`. Vale entender o que ele consegue e o que não consegue.
+O `Stop` fica **desligado por padrão**. Ele dispara ao fim de cada resposta do agente — não quando o chat fecha — então pede a gravação já no primeiro comando e interrompe a conversa. O atrito não compensa a conveniência: `/melinna-salvar` grava quando você decide, e pega tudo até ali.
+
+Se quiser mesmo a gravação automática:
+
+```bash
+melinna vault auto-save on    # liga
+melinna vault auto-save off   # desliga (padrão)
+```
+
+Ou já ao ligar o vault: `melinna vault enable ~/vault --auto-save`.
+
+Ligar instala o hook `Stop`; desligar o remove do settings — não fica hook instalado sem função. Vale entender o que ele consegue e o que não consegue.
 
 **Não existe evento de "chat fechado" que consiga falar com o modelo.** O Claude Code tem `SessionEnd`, mas quando ele dispara o modelo já saiu — dá para rodar um comando, não para pedir um resumo. Só o `Stop` devolve o controle ao agente, e ele dispara **a cada resposta**, não no fim da conversa.
 

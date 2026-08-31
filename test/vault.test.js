@@ -202,12 +202,38 @@ test("hookCommand invoca a CLI pelo PATH, não o caminho do pacote", () => {
   assert.ok(!command.includes(".mjs"), "não deveria referenciar o script diretamente");
 });
 
-test("instala o par Stop + SessionStart", () => {
-  // Capturar sem carregar é metade do trabalho: sem SessionStart, o vault
-  // acumula conhecimento que ninguém lê.
-  const events = HOOK_EVENTS.map((e) => e.event);
-  assert.ok(events.includes("Stop"), "faltou o hook de captura");
-  assert.ok(events.includes("SessionStart"), "faltou o hook de carga");
+test("por padrão instala só o SessionStart, não o Stop", (t) => {
+  // O SessionStart é passivo (carrega contexto); o Stop interrompe a conversa
+  // pedindo gravação, então é opt-in.
+  const dir = tempDir(t, "melinna-hook-");
+  const path = join(dir, "settings.json");
+  const { installed } = installHook(path);
+
+  assert.deepEqual(installed, ["SessionStart"]);
+  const settings = JSON.parse(readFileSync(path, "utf-8"));
+  assert.ok(!settings.hooks.Stop, "o hook Stop não deveria ser instalado por padrão");
+});
+
+test("--auto-save instala também o Stop", (t) => {
+  const dir = tempDir(t, "melinna-hook-");
+  const path = join(dir, "settings.json");
+  const { installed } = installHook(path, { autoSave: true });
+
+  assert.ok(installed.includes("SessionStart"));
+  assert.ok(installed.includes("Stop"));
+});
+
+test("desligar autoSave remove o Stop já instalado", (t) => {
+  // Sem isso o settings ficaria com um hook que não faz nada — estado
+  // inconsistente e confuso de diagnosticar.
+  const dir = tempDir(t, "melinna-hook-");
+  const path = join(dir, "settings.json");
+  installHook(path, { autoSave: true });
+
+  const { installed, removed } = installHook(path, { autoSave: false });
+  assert.deepEqual(installed, ["SessionStart"]);
+  assert.deepEqual(removed, ["Stop"]);
+  assert.ok(!JSON.parse(readFileSync(path, "utf-8")).hooks.Stop);
 });
 
 test("installHook preserva as settings e os hooks do usuário", (t) => {
@@ -241,7 +267,7 @@ test("uninstallHook remove só o hook da Melinna", (t) => {
     "utf-8",
   );
 
-  installHook(path);
+  installHook(path, { autoSave: true });
   const { removed } = uninstallHook(path);
   assert.equal(removed, HOOK_EVENTS.length, "deveria remover uma entrada por evento instalado");
   assert.equal(isHookInstalled(path), false);
@@ -254,10 +280,11 @@ test("uninstallHook remove só o hook da Melinna", (t) => {
 test("instalar duas vezes não duplica a entrada", (t) => {
   const dir = tempDir(t, "melinna-hook-");
   const path = join(dir, "settings.json");
-  installHook(path);
-  installHook(path);
+  installHook(path, { autoSave: true });
+  installHook(path, { autoSave: true });
   const settings = JSON.parse(readFileSync(path, "utf-8"));
   assert.equal(settings.hooks.Stop.length, 1);
+  assert.equal(settings.hooks.SessionStart.length, 1);
 });
 
 test("installHook recusa settings com JSON quebrado em vez de sobrescrever", (t) => {
@@ -280,14 +307,19 @@ function runHook(payload, home) {
   return JSON.parse(out || "{}");
 }
 
-/** MELINNA_HOME com o vault ligado e um transcript de trabalho. */
-function hookFixture(t, { write = true } = {}) {
+/**
+ * MELINNA_HOME com o vault ligado e um transcript de trabalho.
+ *
+ * `autoSave` fica ligado aqui porque estes testes exercitam o comportamento do
+ * hook Stop; no padrão de uso ele é opt-in (ver os testes de autoSave abaixo).
+ */
+function hookFixture(t, { write = true, autoSave = true } = {}) {
   const dir = tempDir(t, "melinna-hookrun-");
   const home = join(dir, "home");
   mkdirSync(home, { recursive: true });
   writeFileSync(
     join(home, "config.json"),
-    JSON.stringify({ vault: { enabled: true, path: join(dir, "vault"), cooldownMinutes: 15 } }),
+    JSON.stringify({ vault: { enabled: true, path: join(dir, "vault"), cooldownMinutes: 15, autoSave } }),
     "utf-8",
   );
   const transcript = join(dir, "transcript.jsonl");
@@ -327,6 +359,15 @@ test("hook respeita stop_hook_active, para não entrar em laço", (t) => {
     { hook_event_name: "Stop", session_id: "s3", transcript_path: transcript, stop_hook_active: true },
     home,
   );
+  assert.deepEqual(out, {});
+});
+
+test("gravação automática é opt-in: sem autoSave o hook não pede nada", (t) => {
+  // Pedir a gravação ao fim de cada resposta interrompia a conversa já no
+  // primeiro comando. A trava fica no runner, não só na instalação, para que
+  // um hook instalado por versão anterior pare de disparar após o upgrade.
+  const { home, transcript } = hookFixture(t, { autoSave: false });
+  const out = runHook({ hook_event_name: "Stop", session_id: "s9", transcript_path: transcript }, home);
   assert.deepEqual(out, {});
 });
 
