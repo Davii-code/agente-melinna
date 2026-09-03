@@ -1,5 +1,13 @@
 node_modules/
 
+# Credencial nunca mora no repositório — este projeto é público. O código lê de
+# variável de ambiente ou do perfil local; nada de chave versionada.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
 # Gerado por `melinna start-feature` em cada projeto onde a CLI é usada —
 # não pertence ao template/repositório da própria Melinna.
 .speckit/

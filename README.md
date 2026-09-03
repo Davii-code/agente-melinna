@@ -39,6 +39,7 @@ Os dois caminhos convivem. Veja [Usando dentro do seu agente](#usando-dentro-do-
 ## Índice
 
 - [Começando](#começando)
+- [Modo agente: `melinna run`](#modo-agente-melinna-run)
 - [Usando dentro do seu agente](#usando-dentro-do-seu-agente)
 - [Os quatro comandos parecidos](#os-quatro-comandos-parecidos)
 - [Todos os comandos](#todos-os-comandos)
@@ -128,6 +129,183 @@ Cria `.melinna/` no repositório para você guardar contexto que não dá para d
 
 ---
 
+## Modo agente: `melinna run`
+
+`melinna task` dispara **uma vez** e espera. `melinna run` **conduz**: encadeia etapas, carrega em cada uma só as skills daquela etapa, e para quando um portão reprova.
+
+```bash
+melinna run "adicionar desconto por cupom no carrinho"
+```
+
+```
+Execução run-20260903-150215
+Stack: node, react, frontend
+Modo: assistido | etapas: entender → especificar → planejar → tarefas → implementar → revisar → verificar
+Teto: US$ 20.00
+
+▶ Entender...
+✔ Entender (5 turnos, US$ 0.2982, acumulado US$ 0.2982)
+```
+
+### As etapas
+
+Dois eixos que não competem: o **spec-kit** entrega artefatos versionáveis, o **superpowers** entrega método.
+
+| Etapa | Artefato (spec-kit) | Método (superpowers) | |
+|---|---|---|---|
+| `entender` | — | `brainstorming` | leitura |
+| `especificar` | `/speckit.specify` | — | escrita |
+| `planejar` | `/speckit.plan` | `writing-plans` | escrita |
+| `tarefas` | `/speckit.tasks` | — | escrita |
+| `implementar` | `/speckit.implement` | `test-driven-development`, `systematic-debugging` | escrita |
+| `revisar` | `/speckit.analyze` | `requesting-code-review` | **portão** |
+| `verificar` | — | `verification-before-completion` | **portão** |
+
+**Portão que reprova interrompe** — não é aviso. É o que impede o agente de afirmar que terminou sem ter testado.
+
+```bash
+melinna run-stages   # detalha cada etapa
+```
+
+O método vem do [superpowers](https://github.com/obra/superpowers), já no catálogo:
+
+```bash
+melinna skills install superpowers
+```
+
+### Três modos
+
+| Modo | Quem decide avançar |
+|---|---|
+| `assistido` *(padrão)* | você, a cada etapa |
+| `supervisionado` | a Melinna, parando nos portões |
+| `autonomo` | vai até o fim, ou até bater um limite |
+
+```bash
+melinna run "..." --mode supervisionado
+melinna run "..." --auto             # sozinho, sem perguntar nada
+melinna run "..." --dry-run          # mostra o plano, não executa
+melinna run "..." --only implementar # uma etapa só
+melinna run "..." --from revisar     # retoma do meio
+```
+
+### `--auto`: decide em vez de perguntar
+
+O problema do autônomo não é a confirmação inicial — é que o agente **pergunta e espera**. Sem ninguém do outro lado, cada pergunta vira uma etapa parada que gastou token para devolver *"qual das duas opções você prefere?"*.
+
+`--auto` trata as três causas de uma vez:
+
+1. **Instrui a decidir** — afirma que não há usuário, manda escolher a opção mais consistente com o código existente, e **registrar** cada escolha com o porquê.
+2. **Dá as ferramentas da stack** — sem `mvn` no allowlist, um projeto Java falha na verificação *por permissão*, e o sintoma engana (parece teste quebrado).
+3. **Dispensa a confirmação** — liga o autônomo e segue.
+
+Na prática:
+
+```bash
+melinna run "adicionar frete no carrinho" --auto
+```
+
+```
+▶ Implementar...
+    ⓘ decidiu: `total(itens, frete = 0)` em vez de novo módulo `frete.js` —
+      carrinho tem um arquivo só; módulo separado seria estrutura sem uso.
+    ⓘ decidiu: testes em `test/`, `node --test` acha por padrão.
+      Não havia convenção no repo.
+✔ Implementar (14 turnos, US$ 0.6228)
+
+Decisões tomadas sozinho (3)
+  · ...
+```
+
+As decisões vão para o terminal, o estado e o registro — é o que você revisa depois, mais útil que o diff, porque explicam *por que* o diff ficou daquele jeito.
+
+**Ele ainda para quando deve.** Decidir sozinho não é chutar em coisa irreversível. Diante de apagar dados, mudar contrato de API pública ou requisito de negócio ausente, o agente responde `BLOQUEADO:` com o motivo:
+
+```
+⚠ Parou em "Implementar": apagar a tabela de pedidos é irreversível e não foi pedido.
+  O agente não chutou numa ambiguidade irreversível — isso é o comportamento certo.
+```
+
+Decidir *como* implementar é dele. Decidir *o que o produto faz*, não.
+
+### Envelope do modo autônomo
+
+Autônomo escreve **sem ninguém olhando**. Os limites não dependem de o agente cooperar:
+
+| Proteção | Como |
+|---|---|
+| Isolamento | worktree próprio — nunca toca sua árvore de trabalho |
+| Gasto | teto em dólar, medido no `total_cost_usd` que a CLI reporta |
+| Ferramentas | `git push`, `reset --hard`, `rm -rf`, `npm publish` bloqueados pela própria CLI |
+| Parada | `melinna run-stop <id>` — funciona de outro terminal |
+| Auditoria | estado e registro em `~/.melinna/runs/` |
+
+```bash
+melinna run-list          # execuções e custo
+melinna run-show <id>     # detalhe por etapa
+melinna run-stop <id>     # para na próxima fronteira de etapa
+```
+
+O padrão no autônomo é apertado (US$ 5, 30 turnos por etapa, 15 min) — mais fácil afrouxar depois de ver o comportamento do que explicar um gasto inesperado.
+
+### Dentro do Claude: `/melinna-agente`
+
+O mesmo pipeline, sem sair da conversa:
+
+```
+/melinna-agente adicionar validação de e-mail no cadastro
+```
+
+O Claude carrega as etapas, puxa a skill do método de cada uma no momento de usar, respeita os portões e grava o resultado no vault ao final.
+
+**Ele não roda `melinna run`.** Isso dispararia um segundo agente por baixo — recursão sem ganho, ao dobro do custo. O agente da conversa já tem o contexto; o slash o instrui a seguir o pipeline ele mesmo.
+
+| Onde | O que acontece |
+|---|---|
+| Terminal (`melinna run`) | a Melinna conduz e chama o agente por subprocesso |
+| Claude (`/melinna-agente`) | o Claude conduz a si mesmo, seguindo as etapas |
+
+Se você pedir autonomia na conversa — *"faz sozinho, sem me perguntar"* — o comando instrui a decidir em vez de perguntar, e a registrar cada escolha.
+
+### O que fica no vault
+
+Ao terminar, a execução grava sozinha (quando o vault está configurado):
+
+```
+📓 vault: ~/Obsidian/projetos/rv-code.md
+   diário: ~/Obsidian/diario/2026-09-03.md
+```
+
+```markdown
+## Decisões
+- parâmetro em vez de módulo novo — o arquivo tem uma função só
+- testes em test/, não havia convenção no repo
+
+## Histórico
+- [[2026-09-03]] — concluído a execução "adicionar frete no carrinho"
+  (implementar → verificar), US$ 0.6228
+```
+
+As decisões que o agente tomou **sozinho** entram como decisões do projeto — são do mesmo tipo: escolhas com um porquê que o código não explica. Acumulam entre execuções, sem duplicar.
+
+Diferente do hook de fim de sessão, aqui não há interrupção: a gravação é o desfecho de um comando que você disparou. `--no-vault` desliga.
+
+### Por que subprocesso, e não SDK
+
+A Melinna dirige o agente por `claude -p --output-format json`, não pelo Agent SDK. A documentação oficial é explícita: o SDK **exige chave de API própria** e não pode usar o login do Claude Code — cobrança separada, por token.
+
+A CLI expõe o mesmo laço pela assinatura que você já tem. Sem credencial nova, sem dependência nova, sem chave em repositório público. E o JSON traz o que o orquestrador precisa:
+
+```json
+{"session_id": "...", "total_cost_usd": 0.2982, "num_turns": 5, "stop_reason": "end_turn"}
+```
+
+`session_id` encadeia as etapas sem reenviar contexto — é o que torna o pipeline viável em custo.
+
+Vale para qualquer CLI que a Melinna suporta. Com `--agent codex` o pipeline roda, só sem retomada nem envelope fino (essas flags são do Claude Code).
+
+---
+
 ## Usando dentro do seu agente
 
 Ninguém abre um terminal para rodar `melinna task` quando já está dentro do Claude ou do Cursor. Por isso há duas portas de entrada, e elas compartilham o mesmo acervo de skills.
@@ -157,6 +335,8 @@ Para Cursor (`.cursor/mcp.json`), Codex (`~/.codex/config.toml`) e os demais, `m
 | Ferramenta MCP | Equivale a |
 |---|---|
 | `melinna_task` | `melinna task` |
+| `melinna_stages` | `melinna run-stages` |
+| `melinna_runs` | `melinna run-list` |
 | `melinna_ask` | `melinna ask` |
 | `melinna_review` | `melinna review` |
 | `melinna_detect_stack` | a detecção usada por todos os comandos |
@@ -591,7 +771,10 @@ melinna init
 
 | Terminal | Ferramenta MCP | O que faz |
 |---|---|---|
-| `melinna task <desc>` | `melinna_task` | Implementa |
+| `melinna task <desc>` | `melinna_task` | Implementa (um disparo) |
+| `melinna run <tarefa>` | — | Modo agente: conduz pelas etapas |
+| `melinna run-stages` | `melinna_stages` | Lista as etapas do pipeline |
+| `melinna run-list/show/stop` | `melinna_runs` | Execuções: custo, detalhe, parada |
 | `melinna ask <pergunta>` | `melinna_ask` | Analisa e explica |
 | `melinna review` | `melinna_review` | Revisa o diff pendente |
 | `melinna quick-task <desc>` | — | Imprime o prompt |
@@ -817,6 +1000,7 @@ Reinicie o Claude Code e digite `/`:
 
 | Comando | O que faz |
 |---|---|
+| `/melinna-agente` | Conduz a tarefa pelo pipeline, sem sair do Claude |
 | `/melinna-salvar` | Grava a nota do projeto **e** a linha do diário |
 | `/melinna-diario` | Só a linha do diário |
 | `/melinna-contexto` | Carrega o que sessões anteriores registraram |

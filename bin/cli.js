@@ -10,6 +10,7 @@ import { task } from "../lib/commands/task.js";
 import { speckit } from "../lib/commands/speckit.js";
 import { review } from "../lib/commands/review.js";
 import { ask } from "../lib/commands/ask.js";
+import { run, runList, runShow, runStop, runStages } from "../lib/commands/run.js";
 import { install } from "../lib/commands/install.js";
 import { upgrade } from "../lib/commands/upgrade.js";
 import { init } from "../lib/commands/init.js";
@@ -184,6 +185,93 @@ program
   .action(async (pergunta, options) => {
     try {
       await ask(ROOT, process.cwd(), pergunta, { ...options, depth: options.deep ? "deep" : "normal" });
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("run <tarefa>")
+  .description(
+    "Modo agente: conduz a tarefa pelas etapas do pipeline (entender → especificar → planejar → " +
+      "tarefas → implementar → revisar → verificar), carregando em cada uma só as skills daquela " +
+      "etapa e parando quando um portão reprova.",
+  )
+  .option("--mode <modo>", "assistido (padrão, para a cada etapa), supervisionado, autonomo", "assistido")
+  .option(
+    "--auto",
+    "vai sozinho do início ao fim sem perguntar nada: liga o autônomo, dispensa a confirmação " +
+      "e instrui o agente a decidir em vez de perguntar",
+  )
+  .option("--from <etapa>", "começa nesta etapa")
+  .option("--to <etapa>", "para nesta etapa")
+  .option("--only <etapas...>", "executa só estas etapas")
+  .option("--resume-run <id>", "retoma uma execução anterior")
+  .option("--max-cost <usd>", "teto de gasto da execução", Number)
+  .option("--max-turns <n>", "teto de turnos por etapa", Number)
+  .option("--stage-timeout <min>", "teto de tempo por etapa, em minutos", Number)
+  .option("--no-worktree", "no modo autônomo, escreve direto em vez de isolar (arriscado)")
+  .option("--deny <ferramentas...>", "ferramentas adicionais a bloquear")
+  .option("--no-vault", "não grava o resultado no vault nem no diário ao terminar")
+  .option("--no-mcp", "não libera os servidores MCP configurados (Jira, GitHub, ...)")
+  .option("--mcp-only <servidores...>", "libera só estes servidores MCP")
+  .option("--mcp-exclude <servidores...>", "libera todos os MCP menos estes")
+  .option("--dry-run", "mostra o plano de execução sem executar nada")
+  .option("--agent <bin>", AGENT_OPT_DESC)
+  .option("--economy <nivel>", ECONOMY_OPT_DESC)
+  .option("-y, --yes", "não pede confirmação no modo autônomo")
+  .action(async (tarefa, options) => {
+    try {
+      await run(ROOT, process.cwd(), tarefa, options);
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("run-stages")
+  .description("Lista as etapas do pipeline, o que cada uma faz e quais skills carrega.")
+  .action(() => {
+    try {
+      runStages();
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("run-list")
+  .description("Lista as execuções do modo agente.")
+  .action(() => {
+    try {
+      runList();
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("run-show <id>")
+  .description("Detalha uma execução: etapas, custo e onde estão o estado e o registro.")
+  .action((id) => {
+    try {
+      runShow(id);
+    } catch (err) {
+      console.log(chalk.red(`Erro: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("run-stop <id>")
+  .description("Pede que uma execução pare ao terminar a etapa atual.")
+  .action((id) => {
+    try {
+      runStop(id);
     } catch (err) {
       console.log(chalk.red(`Erro: ${err.message}`));
       process.exitCode = 1;

@@ -25,10 +25,30 @@ test("os comandos declaram frontmatter válido", () => {
   }
 });
 
+test("/melinna-agente proíbe subprocessar outro agente", () => {
+  // Chamado de dentro do Claude Code, `melinna run` abriria um segundo agente —
+  // a recursão que o projeto decidiu evitar. O slash faz o agente atual seguir
+  // o pipeline ele mesmo.
+  const agente = SLASH_COMMANDS.find((c) => c.name === "melinna-agente");
+  assert.ok(agente, "o comando do pipeline não foi registrado");
+  assert.match(agente.body, /Não rode `melinna run`/);
+  assert.match(agente.body, /Você é o executor/);
+});
+
+test("/melinna-agente cobre as etapas, os portões e o registro", () => {
+  const agente = SLASH_COMMANDS.find((c) => c.name === "melinna-agente");
+  for (const ferramenta of ["melinna_stages", "melinna_task", "melinna_vault_save", "melinna_get_skill"]) {
+    assert.match(agente.body, new RegExp(ferramenta), `faltou instruir ${ferramenta}`);
+  }
+  assert.match(agente.body, /portões/i, "precisa dizer que portão interrompe");
+  assert.match(agente.body, /rode os testes de verdade/i, "precisa exigir verificação real");
+});
+
 test("cada comando manda o modelo chamar a ferramenta MCP certa", () => {
   // O prompt precisa nomear a ferramenta: é o modelo que tem o contexto da
   // conversa, e é ele quem deve chamar.
   const esperado = {
+    "melinna-agente": "melinna_stages",
     "melinna-salvar": "melinna_vault_save",
     "melinna-diario": "melinna_journal_add",
     "melinna-contexto": "melinna_vault_read",
